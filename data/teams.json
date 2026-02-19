@@ -1,0 +1,26 @@
+{
+  "test": {
+    "name": "test",
+    "mmr": 1000,
+    "members": [
+      "188081018979221504"
+    ],
+    "captain": "188081018979221504",
+    "createdAt": "2026-02-19T22:21:51.564Z",
+    "wins": 0,
+    "losses": 0,
+    "matches": []
+  },
+  "mosthated": {
+    "name": "mosthated",
+    "mmr": 1000,
+    "members": [
+      "1350855378837180528"
+    ],
+    "captain": "1350855378837180528",
+    "createdAt": "2026-02-19T22:22:47.936Z",
+    "wins": 0,
+    "losses": 0,
+    "matches": []
+  }
+}

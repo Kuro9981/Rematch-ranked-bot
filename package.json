@@ -1,0 +1,28 @@
+{
+  "name": "rematch-tournament-bot",
+  "version": "1.0.0",
+  "description": "Discord bot for managing Rematch tournaments with MMR ranking and team management",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "deploy": "node deploy-commands.js",
+    "dev": "node src/index.js",
+    "invite": "node generate-invite.js",
+    "validate": "node validate.js"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "rematch",
+    "tournament",
+    "mmr",
+    "ranking"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "discord.js": "^14.25.1",
+    "dotenv": "^17.3.1"
+  }
+}

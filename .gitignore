@@ -47,6 +47,9 @@ web_modules/
 # TypeScript cache
 *.tsbuildinfo
 
+# Environment variables
+.env
+
 # Optional npm cache directory
 .npm
 
