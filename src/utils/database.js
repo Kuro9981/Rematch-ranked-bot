@@ -1,17 +1,15 @@
-const fs = require('fs');
-const path = require('path');
+const redis = require('redis');
 
-const DATA_DIR = path.join(__dirname, '../../data');
+const INSTANCE_ID = process.env.INSTANCE_ID || 'default';
+const client = redis.createClient({
+  url: process.env.REDIS_URL || 'redis://localhost:6379',
+});
 
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+client.on('error', (err) => console.error('Redis Client Error', err));
+client.connect().catch(console.error);
 
-const TEAMS_FILE = path.join(DATA_DIR, 'teams.json');
-const MATCHES_FILE = path.join(DATA_DIR, 'matches.json');
-const QUEUE_FILE = path.join(DATA_DIR, 'queue.json');
-const RANKS_FILE = path.join(DATA_DIR, 'ranks.json');
+// Key prefixes per instance
+const getKey = (type) => `${INSTANCE_ID}:${type}`;
 
 // Initialize default rank thresholds
 const DEFAULT_RANKS = [
@@ -24,66 +22,78 @@ const DEFAULT_RANKS = [
   { name: 'Grandmaster', minMMR: 3000, color: '#FFD700' },
 ];
 
-// Load data from JSON files
-function loadTeams() {
+// Load data from Redis
+async function loadTeams() {
   try {
-    if (fs.existsSync(TEAMS_FILE)) {
-      return JSON.parse(fs.readFileSync(TEAMS_FILE, 'utf8'));
-    }
+    const data = await client.get(getKey('teams'));
+    return data ? JSON.parse(data) : {};
   } catch (error) {
     console.error('Error loading teams:', error);
+    return {};
   }
-  return {};
 }
 
-function loadMatches() {
+async function loadMatches() {
   try {
-    if (fs.existsSync(MATCHES_FILE)) {
-      return JSON.parse(fs.readFileSync(MATCHES_FILE, 'utf8'));
-    }
+    const data = await client.get(getKey('matches'));
+    return data ? JSON.parse(data) : [];
   } catch (error) {
     console.error('Error loading matches:', error);
+    return [];
   }
-  return [];
 }
 
-function loadQueue() {
+async function loadQueue() {
   try {
-    if (fs.existsSync(QUEUE_FILE)) {
-      return JSON.parse(fs.readFileSync(QUEUE_FILE, 'utf8'));
-    }
+    const data = await client.get(getKey('queue'));
+    return data ? JSON.parse(data) : [];
   } catch (error) {
     console.error('Error loading queue:', error);
+    return [];
   }
-  return [];
 }
 
-function loadRanks() {
+async function loadRanks() {
   try {
-    if (fs.existsSync(RANKS_FILE)) {
-      return JSON.parse(fs.readFileSync(RANKS_FILE, 'utf8'));
-    }
+    const data = await client.get(getKey('ranks'));
+    return data ? JSON.parse(data) : DEFAULT_RANKS;
   } catch (error) {
     console.error('Error loading ranks:', error);
+    return DEFAULT_RANKS;
   }
-  return DEFAULT_RANKS;
 }
 
-// Save data to JSON files
-function saveTeams(teams) {
-  fs.writeFileSync(TEAMS_FILE, JSON.stringify(teams, null, 2));
+// Save data to Redis
+async function saveTeams(teams) {
+  try {
+    await client.set(getKey('teams'), JSON.stringify(teams));
+  } catch (error) {
+    console.error('Error saving teams:', error);
+  }
 }
 
-function saveMatches(matches) {
-  fs.writeFileSync(MATCHES_FILE, JSON.stringify(matches, null, 2));
+async function saveMatches(matches) {
+  try {
+    await client.set(getKey('matches'), JSON.stringify(matches));
+  } catch (error) {
+    console.error('Error saving matches:', error);
+  }
 }
 
-function saveQueue(queue) {
-  fs.writeFileSync(QUEUE_FILE, JSON.stringify(queue, null, 2));
+async function saveQueue(queue) {
+  try {
+    await client.set(getKey('queue'), JSON.stringify(queue));
+  } catch (error) {
+    console.error('Error saving queue:', error);
+  }
 }
 
-function saveRanks(ranks) {
-  fs.writeFileSync(RANKS_FILE, JSON.stringify(ranks, null, 2));
+async function saveRanks(ranks) {
+  try {
+    await client.set(getKey('ranks'), JSON.stringify(ranks));
+  } catch (error) {
+    console.error('Error saving ranks:', error);
+  }
 }
 
 module.exports = {

@@ -9,8 +9,8 @@ module.exports = {
     .setDescription('Show the team leaderboard'),
   async execute(interaction) {
     await interaction.deferReply();
-    const teams = loadTeams();
-    const ranks = loadRanks();
+    const teams = await loadTeams();
+    const ranks = await loadRanks();
 
     if (Object.keys(teams).length === 0) {
       return interaction.editReply({

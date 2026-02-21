@@ -15,7 +15,7 @@ module.exports = {
   async execute(interaction) {
     const user = interaction.options.getUser('user');
     const teamName = interaction.options.getString('team');
-    const teams = loadTeams();
+    const teams = await loadTeams();
 
     if (!teams[teamName]) {
       return interaction.reply({
@@ -29,7 +29,7 @@ module.exports = {
       teams[teamName].members.push(user.id);
     }
 
-    saveTeams(teams);
+    await saveTeams(teams);
 
     interaction.reply({
       content: `✅ <@${user.id}> is now captain of **${teamName}**!`,

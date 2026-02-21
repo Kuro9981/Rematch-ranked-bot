@@ -15,8 +15,8 @@ module.exports = {
     ),
   async execute(interaction) {
     const teamName = interaction.options.getString('team');
-    const teams = loadTeams();
-    const ranks = loadRanks();
+    const teams = await loadTeams();
+    const ranks = await loadRanks();
     let selectedTeam = null;
 
     if (teamName) {

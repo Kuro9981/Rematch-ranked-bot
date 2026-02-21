@@ -14,8 +14,8 @@ module.exports = {
     ),
   async execute(interaction) {
     const teamName = interaction.options.getString('team');
-    const teams = loadTeams();
-    const queue = loadQueue();
+    const teams = await loadTeams();
+    const queue = await loadQueue();
 
     // Check if team exists
     if (!teams[teamName]) {
@@ -49,11 +49,11 @@ module.exports = {
       addedAt: new Date().toISOString(),
     });
 
-    saveQueue(queue);
+    await saveQueue(queue);
 
     // Check if we have 2 teams to match
     if (queue.length >= 2) {
-      await startMatch(interaction, queue, teams);
+      await startMatch(interaction, queue, teams, saveQueue, loadMatches, saveMatches);
     } else {
       interaction.reply({
         content: `✅ **${teamName}** queued for a match!\n⏳ Waiting for opponents... (${queue.length}/2 teams)`,
@@ -63,7 +63,7 @@ module.exports = {
   },
 };
 
-async function startMatch(interaction, queue, teams) {
+async function startMatch(interaction, queue, teams, saveQueue, loadMatches, saveMatches) {
   const team1 = queue[0];
   const team2 = queue[1];
 
@@ -91,7 +91,7 @@ async function startMatch(interaction, queue, teams) {
     });
 
     // Store match data
-    const matches = require('../utils/database').loadMatches();
+    const matches = await loadMatches();
     const match = {
       id: `match_${Date.now()}`,
       team1: team1.teamName,
@@ -106,12 +106,12 @@ async function startMatch(interaction, queue, teams) {
     };
 
     matches.push(match);
-    require('../utils/database').saveMatches(matches);
+    await saveMatches(matches);
 
     // Remove teams from queue
     queue.shift();
     queue.shift();
-    require('../utils/database').saveQueue(queue);
+    await saveQueue(queue);
 
     // Send match info to channel
     const matchInfo = `🎮 **MATCH START!**\n\n`;

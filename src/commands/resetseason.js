@@ -8,8 +8,8 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   async execute(interaction) {
     await interaction.deferReply();
-    const teams = loadTeams();
-    const matches = loadMatches();
+    const teams = await loadTeams();
+    const matches = await loadMatches();
 
     // Archive old matches and reset team stats
     Object.values(teams).forEach((team) => {
@@ -18,10 +18,10 @@ module.exports = {
       team.losses = 0;
     });
 
-    saveTeams(teams);
+    await saveTeams(teams);
 
     // Clear queue
-    saveQueue([]);
+    await saveQueue([]);
 
     interaction.editReply({
       content: `✅ Season reset complete!\n📊 All teams reset to 1000 MMR\n📜 ${matches.length} matches archived`,

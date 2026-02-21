@@ -15,7 +15,7 @@ module.exports = {
   async execute(interaction) {
     const teamName = interaction.options.getString('team');
     const mmrValue = interaction.options.getInteger('value');
-    const teams = loadTeams();
+    const teams = await loadTeams();
 
     if (!teams[teamName]) {
       return interaction.reply({
@@ -27,7 +27,7 @@ module.exports = {
     const oldMMR = teams[teamName].mmr;
     teams[teamName].mmr = Math.max(0, mmrValue); // Ensure MMR doesn't go below 0
 
-    saveTeams(teams);
+    await saveTeams(teams);
 
     interaction.reply({
       content: `✅ **${teamName}** MMR updated!\n📊 Old MMR: **${oldMMR}** → New MMR: **${teams[teamName].mmr}**`,

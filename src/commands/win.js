@@ -14,8 +14,8 @@ module.exports = {
     ),
   async execute(interaction) {
     const teamName = interaction.options.getString('team');
-    const matches = loadMatches();
-    const teams = loadTeams();
+    const matches = await loadMatches();
+    const teams = await loadTeams();
 
     // Find active match for this channel
     const match = matches.find(
@@ -71,8 +71,8 @@ module.exports = {
       match.status = 'completed';
       match.completedAt = new Date().toISOString();
 
-      saveTeams(teams);
-      saveMatches(matches);
+      await saveTeams(teams);
+      await saveMatches(matches);
 
       // Update match message
       const guild = interaction.guild;

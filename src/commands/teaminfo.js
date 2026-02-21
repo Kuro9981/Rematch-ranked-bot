@@ -13,7 +13,7 @@ module.exports = {
     ),
   async execute(interaction) {
     const teamName = interaction.options.getString('team');
-    const teams = loadTeams();
+    const teams = await loadTeams();
 
     if (!teams[teamName]) {
       return interaction.reply({

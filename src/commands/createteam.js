@@ -12,8 +12,8 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   async execute(interaction) {
     const teamName = interaction.options.getString('name');
-    const teams = loadTeams();
-    const ranks = loadRanks();
+    const teams = await loadTeams();
+    const ranks = await loadRanks();
 
     if (teams[teamName]) {
       return interaction.reply({
@@ -33,7 +33,7 @@ module.exports = {
       matches: [],
     };
 
-    saveTeams(teams);
+    await saveTeams(teams);
 
     const rank = getRankFromMMR(teams[teamName].mmr, ranks);
     interaction.reply({
