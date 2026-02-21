@@ -335,20 +335,18 @@ async function handleVote(interaction) {
     // Check if both teams have voted
     if (Object.keys(voteData.votes).length === 2) {
       console.log('[VOTE] Both teams have voted! Processing match result...');
-      // Count votes
-      const votes = Object.values(voteData.votes);
-      const team1Votes = votes.filter(v => v === voteData.team1).length;
-      const team2Votes = votes.filter(v => v === voteData.team2).length;
+      // Get the votes
+      const team1Vote = voteData.votes[voteData.team1];
+      const team2Vote = voteData.votes[voteData.team2];
       
-      console.log('[VOTE] Team 1 votes:', team1Votes, '| Team 2 votes:', team2Votes);
+      console.log('[VOTE] Team 1 voted for:', team1Vote, '| Team 2 voted for:', team2Vote);
       
       let winner;
-      if (team1Votes > team2Votes) {
-        winner = voteData.team1;
-      } else if (team2Votes > team1Votes) {
-        winner = voteData.team2;
+      if (team1Vote === team2Vote) {
+        // Both teams voted for the same team - we have a winner!
+        winner = team1Vote;
       } else {
-        // Draw
+        // Draw - votes don't match
         winner = null;
       }
       
@@ -370,6 +368,23 @@ async function handleVote(interaction) {
         
         winnerTeam.mmr += winnerChange;
         loserTeam.mmr = Math.max(0, loserTeam.mmr + loserChange);
+        
+        // Save match to history
+        const matches = await loadMatches();
+        matches.push({
+          id: matchId,
+          team1: voteData.team1,
+          team1Name: winnerTeam === updatedTeams[voteData.team1] ? updatedTeams[voteData.team1].name : updatedTeams[voteData.team2].name,
+          team2: voteData.team2,
+          team2Name: loserTeam === updatedTeams[voteData.team2] ? updatedTeams[voteData.team2].name : updatedTeams[voteData.team1].name,
+          winner: winner,
+          winnerName: winnerTeam.name,
+          loserName: loserTeam.name,
+          winnerMMRChange: winnerChange,
+          loserMMRChange: loserChange,
+          completedAt: new Date().toISOString(),
+        });
+        await saveMatches(matches);
         
         // Save updated teams
         await saveTeams(updatedTeams);
@@ -407,26 +422,44 @@ async function handleVote(interaction) {
         console.log('[VOTE] Match data deleted for matchId:', matchId);
         console.log('[VOTE] Remaining active matches:', Array.from(activeMatches.keys()));
       } else {
-        // Draw
-        console.log('[VOTE] Match ended in a draw');
+        // Draw - teams voted for different teams, restart voting
+        console.log('[VOTE] It\'s a draw! Teams voted for different winners. Restarting voting...');
+        
         const matchChannel = await interaction.guild.channels.fetch(voteData.channelId);
-        await matchChannel.send({
-          content: '⚖️ Draw! No team won.',
-          ephemeral: false,
-        });
+        const updatedTeams = await loadTeams();
+        const team1 = updatedTeams[voteData.team1];
+        const team2 = updatedTeams[voteData.team2];
         
-        // Delete match channel after 3 seconds to allow users to see the result
-        setTimeout(async () => {
-          try {
-            await matchChannel.delete();
-            console.log('[VOTE] Match channel deleted after draw:', voteData.channelId);
-          } catch (error) {
-            console.error('[VOTE] Error deleting match channel after draw:', error);
-          }
-        }, 3000);
+        // Send draw message
+        const drawEmbed = new EmbedBuilder()
+          .setColor('#FFD700')
+          .setTitle('⚖️ It\'s a Draw!')
+          .setDescription(`${team1.name} and ${team2.name} voted for different teams!\n\n**Please vote again:**`)
+          .addFields(
+            { name: team1.name, value: `👥 Players: ${team1.members.length}\n📊 MMR: ${team1.mmr}`, inline: true },
+            { name: team2.name, value: `👥 Players: ${team2.members.length}\n📊 MMR: ${team2.mmr}`, inline: true }
+          );
         
-        activeMatches.delete(matchId);
-        console.log('[VOTE] Match data deleted after draw');
+        // Create new voting buttons
+        const voteTeam1Button = new ButtonBuilder()
+          .setCustomId(`vote_${matchId}_${voteData.team1}`)
+          .setLabel(`🔵 Vote ${team1.name}`)
+          .setStyle(ButtonStyle.Primary);
+        
+        const voteTeam2Button = new ButtonBuilder()
+          .setCustomId(`vote_${matchId}_${voteData.team2}`)
+          .setLabel(`🔴 Vote ${team2.name}`)
+          .setStyle(ButtonStyle.Danger);
+        
+        const voteRow = new ActionRowBuilder()
+          .addComponents(voteTeam1Button, voteTeam2Button);
+        
+        // Reset votes and save
+        voteData.votes = {};
+        activeMatches.set(matchId, voteData);
+        
+        await matchChannel.send({ embeds: [drawEmbed], components: [voteRow] });
+        console.log('[VOTE] Restarted voting with new buttons');
       }
     }
   } catch (error) {

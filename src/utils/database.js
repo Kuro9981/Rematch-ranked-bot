@@ -22,6 +22,20 @@ const DEFAULT_RANKS = [
   { name: 'Grandmaster', minMMR: 3000, color: '#FFD700' },
 ];
 
+// Helper function to find team by name (case insensitive)
+function findTeamByName(teams, teamName) {
+  if (!teamName) return null;
+  
+  // Try exact match first
+  if (teams[teamName]) return { key: teamName, data: teams[teamName] };
+  
+  // Try case-insensitive match
+  const key = Object.keys(teams).find(
+    (k) => k.toLowerCase() === teamName.toLowerCase()
+  );
+  return key ? { key, data: teams[key] } : null;
+}
+
 // Load data from Redis
 async function loadTeams() {
   try {
@@ -105,5 +119,6 @@ module.exports = {
   saveMatches,
   saveQueue,
   saveRanks,
+  findTeamByName,
   DEFAULT_RANKS,
 };

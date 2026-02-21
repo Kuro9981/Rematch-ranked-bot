@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { loadTeams, loadMatches } = require('../utils/database');
+const { loadTeams, loadMatches, findTeamByName } = require('../utils/database');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -12,23 +12,27 @@ module.exports = {
         .setRequired(false)
     ),
   async execute(interaction) {
-    const teamName = interaction.options.getString('team');
+    const teamNameOption = interaction.options.getString('team');
     const teams = await loadTeams();
     const matches = await loadMatches();
     let selectedTeam = null;
+    let selectedTeamKey = null;
 
-    if (teamName) {
-      selectedTeam = teams[teamName];
-      if (!selectedTeam) {
+    if (teamNameOption) {
+      const result = findTeamByName(teams, teamNameOption);
+      if (!result) {
         return interaction.reply({
-          content: `❌ Team **${teamName}** does not exist!`,
+          content: `❌ Team **${teamNameOption}** does not exist!`,
           ephemeral: true,
         });
       }
+      selectedTeamKey = result.key;
+      selectedTeam = result.data;
     } else {
       // Find team where user is member
-      for (const [name, team] of Object.entries(teams)) {
+      for (const [key, team] of Object.entries(teams)) {
         if (team.members.includes(interaction.user.id)) {
+          selectedTeamKey = key;
           selectedTeam = team;
           break;
         }
@@ -45,8 +49,8 @@ module.exports = {
     // Get team's completed matches
     const teamMatches = matches.filter(
       (m) =>
-        (m.team1 === selectedTeam.name || m.team2 === selectedTeam.name) &&
-        m.status === 'completed'
+        (m.team1 === selectedTeamKey || m.team2 === selectedTeamKey) &&
+        m.completedAt
     );
 
     if (teamMatches.length === 0) {
@@ -63,17 +67,21 @@ module.exports = {
 
     // Build history text
     let historyText = '```\n';
-    historyText += 'Date                 Result          Opponent\n';
-    historyText += '─'.repeat(70) + '\n';
+    historyText += 'Date                 Result          Opponent            MMR Change\n';
+    historyText += '─'.repeat(80) + '\n';
 
     teamMatches.slice(0, 10).forEach((match) => {
       const date = new Date(match.completedAt).toLocaleDateString();
-      const result = match.winner === selectedTeam.name ? '✅ WIN' : '❌ LOSS';
-      const opponent = match.winner === selectedTeam.name ? match.team2 : match.team1;
+      const isWinner = match.winner === selectedTeamKey;
+      const result = isWinner ? '✅ WIN' : '❌ LOSS';
+      const opponent = isWinner ? match.team2Name : match.team1Name;
+      const mmrChange = isWinner ? match.winnerMMRChange : match.loserMMRChange;
+      const mmrStr = `${mmrChange > 0 ? '+' : ''}${mmrChange}`;
 
       const dateStr = date.padEnd(21);
       const resultStr = result.padEnd(16);
-      historyText += `${dateStr}${resultStr}${opponent}\n`;
+      const opponentStr = opponent.substring(0, 20).padEnd(20);
+      historyText += `${dateStr}${resultStr}${opponentStr}${mmrStr}\n`;
     });
 
     historyText += '```';

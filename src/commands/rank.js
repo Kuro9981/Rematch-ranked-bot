@@ -1,7 +1,6 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { loadTeams } = require('../utils/database');
+const { loadTeams, loadRanks, findTeamByName } = require('../utils/database');
 const { getRankFromMMR, getProgressToNextRank } = require('../utils/mmr');
-const { loadRanks } = require('../utils/database');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -14,19 +13,20 @@ module.exports = {
         .setRequired(false)
     ),
   async execute(interaction) {
-    const teamName = interaction.options.getString('team');
+    const teamNameOption = interaction.options.getString('team');
     const teams = await loadTeams();
     const ranks = await loadRanks();
     let selectedTeam = null;
 
-    if (teamName) {
-      selectedTeam = teams[teamName];
-      if (!selectedTeam) {
+    if (teamNameOption) {
+      const result = findTeamByName(teams, teamNameOption);
+      if (!result) {
         return interaction.reply({
-          content: `❌ Team **${teamName}** does not exist!`,
+          content: `❌ Team **${teamNameOption}** does not exist!`,
           ephemeral: true,
         });
       }
+      selectedTeam = result.data;
     } else {
       // Find team where user is member
       for (const [name, team] of Object.entries(teams)) {

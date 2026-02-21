@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { loadTeams } = require('../utils/database');
+const { loadTeams, findTeamByName } = require('../utils/database');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -15,14 +15,15 @@ module.exports = {
     const teamName = interaction.options.getString('team');
     const teams = await loadTeams();
 
-    if (!teams[teamName]) {
+    const result = findTeamByName(teams, teamName);
+    if (!result) {
       return interaction.reply({
         content: `❌ Team **${teamName}** does not exist!`,
         ephemeral: true,
       });
     }
 
-    const team = teams[teamName];
+    const team = result.data;
     const createdDate = new Date(team.createdAt).toLocaleDateString();
 
     let memberList = '';
@@ -34,7 +35,7 @@ module.exports = {
 
     const captainName = team.captain ? `<@${team.captain}>` : 'Not assigned';
 
-    const description = `**Team Name:** ${team.name}\n`;
+    let description = `**Team Name:** ${team.name}\n`;
     description += `**Captain:** ${captainName}\n`;
     description += `**Members:** ${memberList}\n`;
     description += `**MMR:** ${team.mmr}\n`;
