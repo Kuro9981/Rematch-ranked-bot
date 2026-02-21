@@ -1,11 +1,11 @@
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const { loadQueue, saveQueue } = require('../utils/database');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('setup')
     .setDescription('Setup a matchmaking queue for your server')
-    .setDefaultMemberPermissions('ManageGuild'),
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   async execute(interaction) {
     const guild = interaction.guild;
     const channel = interaction.channel;
