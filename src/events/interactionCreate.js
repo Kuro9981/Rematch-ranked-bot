@@ -147,48 +147,91 @@ async function startMatch(interaction, queue, teams) {
   const team1 = teams[queue[0]];
   const team2 = teams[queue[1]];
   const matchId = `match_${Date.now()}`;
+  const guild = interaction.guild;
   
-  // Crea bottoni per votare il vincitore
-  const voteTeam1Button = new ButtonBuilder()
-    .setCustomId(`vote_${matchId}_${queue[0]}`)
-    .setLabel(`🔵 Vote ${team1.name}`)
-    .setStyle(ButtonStyle.Primary);
-  
-  const voteTeam2Button = new ButtonBuilder()
-    .setCustomId(`vote_${matchId}_${queue[1]}`)
-    .setLabel(`🔴 Vote ${team2.name}`)
-    .setStyle(ButtonStyle.Danger);
-  
-  const voteRow = new ActionRowBuilder()
-    .addComponents(voteTeam1Button, voteTeam2Button);
-  
-  const embed = new EmbedBuilder()
-    .setColor('#FFA500')
-    .setTitle('⚔️ MATCH FOUND!')
-    .addFields(
-      { name: team1.name, value: `Giocatori: ${team1.members.length}`, inline: true },
-      { name: team2.name, value: `Giocatori: ${team2.members.length}`, inline: true },
-      { name: '🗳️ Votazione', value: 'Clicca il bottone del team che ha vinto!\n(Entrambi i team devono votare)', inline: false }
-    )
-    .setFooter({ text: 'Match ID: ' + matchId });
-  
-  const voteMessage = await interaction.channel.send({ embeds: [embed], components: [voteRow] });
-  
-  // Salva lo stato della votazione
-  const voteData = {
-    matchId,
-    team1: queue[0],
-    team2: queue[1],
-    messageId: voteMessage.id,
-    votes: {},
-    createdAt: new Date().toISOString(),
-  };
-  
-  // Salva i dati della votazione in Redis
-  await saveMatchVote(voteData);
-  
-  // Svuota la queue dopo l'avvio del match
-  await saveQueue([]);
+  try {
+    // Crea il canale privato per il match nella stessa categoria
+    const category = interaction.channel.parent;
+    
+    const matchChannel = await guild.channels.create({
+      name: `match-${team1.name.toLowerCase()}-vs-${team2.name.toLowerCase()}`,
+      type: 'GuildText',
+      parent: category ? category.id : null,
+      permissionOverwrites: [
+        {
+          id: guild.id,
+          deny: ['ViewChannel'],
+        },
+        {
+          id: teams[queue[0]].captain,
+          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
+        },
+        {
+          id: teams[queue[1]].captain,
+          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
+        },
+      ],
+    });
+    
+    // Crea bottoni per votare il vincitore
+    const voteTeam1Button = new ButtonBuilder()
+      .setCustomId(`vote_${matchId}_${queue[0]}`)
+      .setLabel(`🔵 Vote ${team1.name}`)
+      .setStyle(ButtonStyle.Primary);
+    
+    const voteTeam2Button = new ButtonBuilder()
+      .setCustomId(`vote_${matchId}_${queue[1]}`)
+      .setLabel(`🔴 Vote ${team2.name}`)
+      .setStyle(ButtonStyle.Danger);
+    
+    const voteRow = new ActionRowBuilder()
+      .addComponents(voteTeam1Button, voteTeam2Button);
+    
+    const embed = new EmbedBuilder()
+      .setColor('#FFA500')
+      .setTitle('⚔️ MATCH IN PROGRESS!')
+      .addFields(
+        { name: team1.name, value: `👥 Giocatori: ${team1.members.length}\n📊 MMR: ${team1.mmr}`, inline: true },
+        { name: team2.name, value: `👥 Giocatori: ${team2.members.length}\n📊 MMR: ${team2.mmr}`, inline: true },
+        { name: '🗳️ Votazione Vincitore', value: 'Clicca il bottone del team che ha vinto!\n(Entrambi i capitani devono votare)', inline: false }
+      )
+      .setFooter({ text: 'Match ID: ' + matchId });
+    
+    const voteMessage = await matchChannel.send({ embeds: [embed], components: [voteRow] });
+    
+    // Salva lo stato della votazione
+    const voteData = {
+      matchId,
+      team1: queue[0],
+      team2: queue[1],
+      channelId: matchChannel.id,
+      messageId: voteMessage.id,
+      votes: {},
+      createdAt: new Date().toISOString(),
+    };
+    
+    // Salva i dati della votazione in Redis
+    await saveMatchVote(voteData);
+    
+    // Notifica nel canale della queue
+    const notifyEmbed = new EmbedBuilder()
+      .setColor('#00FF00')
+      .setTitle('✅ MATCH INIZIATO!')
+      .setDescription(`**${team1.name}** vs **${team2.name}**\n\n📍 Canale privato creato per la votazione: <#${matchChannel.id}>`)
+      .setFooter({ text: 'Match ID: ' + matchId });
+    
+    await interaction.channel.send({ embeds: [notifyEmbed] });
+    
+    // Svuota la queue dopo l'avvio del match
+    await saveQueue([]);
+    
+  } catch (error) {
+    console.error('Errore nella creazione del canale di match:', error);
+    await interaction.channel.send({
+      content: '❌ Errore nella creazione del canale di match!',
+      ephemeral: true,
+    });
+  }
 }
 
 // Funzione per salvare i dati della votazione
@@ -303,7 +346,6 @@ async function handleVote(interaction) {
         loserTeam.losses++;
         
         // Calcola e applica i cambiamenti di MMR
-        const { calculateMMRChange } = require('../utils/mmr');
         const { winnerChange, loserChange } = calculateMMRChange(winnerTeam.mmr, loserTeam.mmr);
         
         winnerTeam.mmr += winnerChange;
@@ -312,7 +354,9 @@ async function handleVote(interaction) {
         // Salva i team aggiornati
         await saveTeams(updatedTeams);
         
-        // Invia il messaggio di fine match nel canale
+        // Invia il messaggio di fine match nel canale del match
+        const matchChannel = await interaction.guild.channels.fetch(voteData.channelId);
+        
         const resultEmbed = new EmbedBuilder()
           .setColor('#00FF00')
           .setTitle('🏆 MATCH TERMINATO!')
@@ -323,7 +367,7 @@ async function handleVote(interaction) {
           )
           .setFooter({ text: 'Match ID: ' + matchId });
         
-        await interaction.channel.send({ embeds: [resultEmbed] });
+        await matchChannel.send({ embeds: [resultEmbed] });
         
         // Elimina i dati della votazione
         const redis = require('redis');
@@ -341,7 +385,8 @@ async function handleVote(interaction) {
         }
       } else {
         // Pareggio
-        await interaction.channel.send({
+        const matchChannel = await interaction.guild.channels.fetch(voteData.channelId);
+        await matchChannel.send({
           content: '⚖️ Pareggio! Nessun team ha vinto.',
           ephemeral: false,
         });
