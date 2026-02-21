@@ -392,6 +392,16 @@ async function handleVote(interaction) {
         await matchChannel.send({ embeds: [resultEmbed] });
         console.log('[VOTE] Result embed sent to match channel');
         
+        // Delete match channel after 3 seconds to allow users to see the result
+        setTimeout(async () => {
+          try {
+            await matchChannel.delete();
+            console.log('[VOTE] Match channel deleted:', voteData.channelId);
+          } catch (error) {
+            console.error('[VOTE] Error deleting match channel:', error);
+          }
+        }, 3000);
+        
         // Delete vote data from memory
         activeMatches.delete(matchId);
         console.log('[VOTE] Match data deleted for matchId:', matchId);
@@ -404,6 +414,17 @@ async function handleVote(interaction) {
           content: '⚖️ Draw! No team won.',
           ephemeral: false,
         });
+        
+        // Delete match channel after 3 seconds to allow users to see the result
+        setTimeout(async () => {
+          try {
+            await matchChannel.delete();
+            console.log('[VOTE] Match channel deleted after draw:', voteData.channelId);
+          } catch (error) {
+            console.error('[VOTE] Error deleting match channel after draw:', error);
+          }
+        }, 3000);
+        
         activeMatches.delete(matchId);
         console.log('[VOTE] Match data deleted after draw');
       }
