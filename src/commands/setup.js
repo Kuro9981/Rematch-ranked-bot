@@ -1,85 +1,49 @@
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
-const { loadQueue, saveQueue } = require('../utils/database');
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const { loadQueue, saveQueue, loadTeams } = require('../utils/database');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('setup')
-    .setDescription('Setup a matchmaking queue for your server')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    .setDescription('Crea una sala d\'attesa per la queue'),
+  
   async execute(interaction) {
-    const guild = interaction.guild;
-    const channel = interaction.channel;
-
     try {
-      // Create a thread for the queue
-      const threadName = `🎮-matchmaking-${Date.now()}`;
-      const thread = await channel.threads.create({
-        name: threadName,
-        type: ChannelType.PublicThread,
-      });
-
-      // Store the thread ID for this queue
-      const queueData = {
-        threadId: thread.id,
-        channelId: channel.id,
-        guildId: guild.id,
-        createdAt: new Date().toISOString(),
-      };
-
-      // Create queue status message in thread
-      const queueEmbed = new EmbedBuilder()
-        .setTitle('⏳ Matchmaking Queue')
-        .setDescription('Click a button below to join or leave the queue')
-        .setColor(0x0099ff)
+      const guildId = interaction.guildId;
+      
+      // Crea i bottoni
+      const joinButton = new ButtonBuilder()
+        .setCustomId('queue_join')
+        .setLabel('➕ Join Queue')
+        .setStyle(ButtonStyle.Success);
+      
+      const leaveButton = new ButtonBuilder()
+        .setCustomId('queue_leave')
+        .setLabel('❌ Leave Queue')
+        .setStyle(ButtonStyle.Danger);
+      
+      const row = new ActionRowBuilder()
+        .addComponents(joinButton, leaveButton);
+      
+      // Embed iniziale
+      const embed = new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle('🎮 Queue Matchmaking')
+        .setDescription('Clicca i bottoni per entrare o uscire dalla queue!')
         .addFields(
-          { name: '👥 Players in Queue', value: '0', inline: true },
-          { name: '⏱️ Average Wait Time', value: 'N/A', inline: true }
+          { name: 'Team in Attesa', value: '0/2', inline: false }
         )
-        .setTimestamp();
-
-      const buttons = new ActionRowBuilder()
-        .addComponents(
-          new ButtonBuilder()
-            .setCustomId(`queue_join_${thread.id}`)
-            .setLabel('➕ Join Queue')
-            .setStyle(ButtonStyle.Success),
-          new ButtonBuilder()
-            .setCustomId(`queue_leave_${thread.id}`)
-            .setLabel('❌ Leave Queue')
-            .setStyle(ButtonStyle.Danger)
-        );
-
-      const statusMessage = await thread.send({
-        embeds: [queueEmbed],
-        components: [buttons],
-      });
-
-      // Pin the status message
-      await statusMessage.pin();
-
-      // Reply to setup command
+        .setFooter({ text: 'Rematch Ranked Bot' });
+      
+      // Invia il messaggio
       await interaction.reply({
-        content: `✅ Matchmaking queue created!\n📍 <#${thread.id}>`,
-        ephemeral: true,
+        embeds: [embed],
+        components: [row],
+        fetchReply: true,
       });
-
-      // Send welcome message to thread
-      const welcomeEmbed = new EmbedBuilder()
-        .setTitle('Welcome to Matchmaking!')
-        .setDescription('Use the buttons above to:\n• **Join Queue** - Add your team to matchmaking\n• **Leave Queue** - Remove your team from the queue\n\nWhen 2 teams are matched, a match channel will be created for you to play!')
-        .setColor(0x00ff00)
-        .setTimestamp();
-
-      await thread.send({
-        embeds: [welcomeEmbed],
-      });
-
+      
     } catch (error) {
-      console.error('Error setting up queue:', error);
-      return interaction.reply({
-        content: '❌ Error creating matchmaking queue!',
-        ephemeral: true,
-      });
+      console.error('Errore setup:', error);
+      await interaction.reply({ content: 'Errore nella creazione della queue!', ephemeral: true });
     }
   },
 };
