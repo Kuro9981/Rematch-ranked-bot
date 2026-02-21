@@ -1,4 +1,4 @@
-const { PermissionFlagsBits, EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
+const { PermissionFlagsBits, EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, ChannelType } = require('discord.js');
 const { loadTeams, loadQueue, saveQueue, loadMatches, saveMatches, saveTeams } = require('../utils/database');
 const { calculateMMRChange } = require('../utils/mmr');
 
@@ -162,7 +162,7 @@ async function startMatch(interaction, queue, teams) {
     // Crea il canale privato per il match
     const matchChannel = await guild.channels.create({
       name: `match-${team1.name.toLowerCase().replace(/\s+/g, '-')}-vs-${team2.name.toLowerCase().replace(/\s+/g, '-')}`,
-      type: 'GuildText',
+      type: ChannelType.GuildText,
       parent: categoryId,
       permissionOverwrites: [
         {
