@@ -150,28 +150,37 @@ async function startMatch(interaction, queue, teams) {
   const guild = interaction.guild;
   
   try {
-    // Crea il canale privato per il match nella stessa categoria
-    const category = interaction.channel.parent;
+    console.log(`Creating match channel for ${team1.name} vs ${team2.name}`);
     
+    // Prendi la categoria del canale attuale
+    const category = interaction.channel.parent;
+    const categoryId = category ? category.id : null;
+    
+    console.log(`Category ID: ${categoryId}`);
+    console.log(`Team 1 Captain: ${team1.captain}, Team 2 Captain: ${team2.captain}`);
+    
+    // Crea il canale privato per il match
     const matchChannel = await guild.channels.create({
-      name: `match-${team1.name.toLowerCase()}-vs-${team2.name.toLowerCase()}`,
+      name: `match-${team1.name.toLowerCase().replace(/\s+/g, '-')}-vs-${team2.name.toLowerCase().replace(/\s+/g, '-')}`,
       type: 'GuildText',
-      parent: category ? category.id : null,
+      parent: categoryId,
       permissionOverwrites: [
         {
-          id: guild.id,
+          id: guild.roles.everyone,
           deny: ['ViewChannel'],
         },
         {
-          id: teams[queue[0]].captain,
+          id: team1.captain,
           allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
         },
         {
-          id: teams[queue[1]].captain,
+          id: team2.captain,
           allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
         },
       ],
     });
+    
+    console.log(`Match channel created: ${matchChannel.id}`);
     
     // Crea bottoni per votare il vincitore
     const voteTeam1Button = new ButtonBuilder()
@@ -227,9 +236,10 @@ async function startMatch(interaction, queue, teams) {
     
   } catch (error) {
     console.error('Errore nella creazione del canale di match:', error);
+    console.error('Stack:', error.stack);
     await interaction.channel.send({
-      content: '❌ Errore nella creazione del canale di match!',
-      ephemeral: true,
+      content: '❌ Errore nella creazione del canale di match!\n```' + error.message + '```',
+      ephemeral: false,
     });
   }
 }
