@@ -44,6 +44,7 @@ module.exports = {
 
         // Vote buttons for winner
         if (customId.startsWith('vote_')) {
+          console.log('[VOTE] Button clicked with customId:', customId);
           await handleVote(interaction);
           return;
         }
@@ -153,6 +154,8 @@ async function startMatch(interaction, queue, teams) {
   const guild = interaction.guild;
   
   try {
+    console.log('[MATCH] Creating match with ID:', matchId);
+    console.log('[MATCH] Team 1:', team1.name, '| Team 2:', team2.name);
     console.log(`Creating match channel for ${team1.name} vs ${team2.name}`);
     
     // Get category of current channel
@@ -191,10 +194,14 @@ async function startMatch(interaction, queue, teams) {
       .setLabel(`🔵 Vote ${team1.name}`)
       .setStyle(ButtonStyle.Primary);
     
+    console.log('[MATCH] Vote button 1 customId:', `vote_${matchId}_${queue[0]}`);
+    
     const voteTeam2Button = new ButtonBuilder()
       .setCustomId(`vote_${matchId}_${queue[1]}`)
       .setLabel(`🔴 Vote ${team2.name}`)
       .setStyle(ButtonStyle.Danger);
+    
+    console.log('[MATCH] Vote button 2 customId:', `vote_${matchId}_${queue[1]}`);
     
     const voteRow = new ActionRowBuilder()
       .addComponents(voteTeam1Button, voteTeam2Button);
@@ -225,7 +232,10 @@ async function startMatch(interaction, queue, teams) {
     // Save voting status in memory
     activeMatches.set(matchId, voteData);
     
-    console.log(`Match data saved for ${matchId}`);
+    console.log('[MATCH] Vote data saved for matchId:', matchId);
+    console.log('[MATCH] Active matches count:', activeMatches.size);
+    console.log('[MATCH] All active match IDs:', Array.from(activeMatches.keys()));
+    console.log('[MATCH] Vote data:', JSON.stringify(voteData, null, 2));
     
     // Notify in queue channel
     const notifyEmbed = new EmbedBuilder()
@@ -255,20 +265,39 @@ async function handleVote(interaction) {
     await interaction.deferReply({ ephemeral: true });
     
     const customId = interaction.customId;
-    const parts = customId.split('_');
-    const matchId = parts[1];
-    const votedTeamId = parts[2];
+    console.log('[VOTE] Custom ID received:', customId);
+    console.log('[VOTE] Active matches in memory:', Array.from(activeMatches.keys()));
+    
+    // Parse customId correctly: vote_match_TIMESTAMP_TEAMID
+    const match = customId.match(/^vote_(.+)_([a-zA-Z0-9]+)$/);
+    if (!match) {
+      console.error('[VOTE] Failed to parse customId:', customId);
+      return await interaction.editReply({
+        content: '❌ Invalid vote format!',
+        ephemeral: true,
+      });
+    }
+    
+    const matchId = match[1];
+    const votedTeamId = match[2];
+    
+    console.log('[VOTE] Parsed matchId:', matchId);
+    console.log('[VOTE] Parsed votedTeamId:', votedTeamId);
     
     // Load vote data
     const voteData = activeMatches.get(matchId);
     
     if (!voteData) {
-      console.log(`Match data not found for ${matchId}. Available matches: ${Array.from(activeMatches.keys()).join(', ')}`);
+      console.error('[VOTE] Match data NOT found!');
+      console.error('[VOTE] Looking for:', matchId);
+      console.error('[VOTE] Available matches:', Array.from(activeMatches.keys()).join(', '));
       return await interaction.editReply({
         content: '❌ Match not found for this vote!',
         ephemeral: true,
       });
     }
+    
+    console.log('[VOTE] Match data FOUND for:', matchId);
     
     const teams = await loadTeams();
     const userTeamId = Object.keys(teams).find(teamId => teams[teamId].captain === interaction.user.id);
@@ -289,8 +318,13 @@ async function handleVote(interaction) {
     }
     
     // Register vote
+    console.log('[VOTE] User team ID:', userTeamId);
+    console.log('[VOTE] Voted for team ID:', votedTeamId);
     voteData.votes[userTeamId] = votedTeamId;
     activeMatches.set(matchId, voteData);
+    
+    console.log('[VOTE] Current votes:', voteData.votes);
+    console.log('[VOTE] Votes count:', Object.keys(voteData.votes).length);
     
     const votedTeamName = teams[votedTeamId].name;
     await interaction.editReply({
@@ -300,10 +334,13 @@ async function handleVote(interaction) {
     
     // Check if both teams have voted
     if (Object.keys(voteData.votes).length === 2) {
+      console.log('[VOTE] Both teams have voted! Processing match result...');
       // Count votes
       const votes = Object.values(voteData.votes);
       const team1Votes = votes.filter(v => v === voteData.team1).length;
       const team2Votes = votes.filter(v => v === voteData.team2).length;
+      
+      console.log('[VOTE] Team 1 votes:', team1Votes, '| Team 2 votes:', team2Votes);
       
       let winner;
       if (team1Votes > team2Votes) {
@@ -317,9 +354,11 @@ async function handleVote(interaction) {
       
       // Update winner team
       if (winner) {
+        console.log('[VOTE] Winner team ID:', winner);
         const updatedTeams = await loadTeams();
         const winnerTeam = updatedTeams[winner];
         const loserTeamId = winner === voteData.team1 ? voteData.team2 : voteData.team1;
+        console.log('[VOTE] Winner:', winnerTeam.name, '| Loser:', updatedTeams[loserTeamId].name);
         const loserTeam = updatedTeams[loserTeamId];
         
         // Update team data
@@ -334,9 +373,11 @@ async function handleVote(interaction) {
         
         // Save updated teams
         await saveTeams(updatedTeams);
+        console.log('[VOTE] Teams saved to database');
         
         // Send match end message in match channel
         const matchChannel = await interaction.guild.channels.fetch(voteData.channelId);
+        console.log('[VOTE] Match channel ID:', voteData.channelId);
         
         const resultEmbed = new EmbedBuilder()
           .setColor('#00FF00')
@@ -349,23 +390,29 @@ async function handleVote(interaction) {
           .setFooter({ text: 'Match ID: ' + matchId });
         
         await matchChannel.send({ embeds: [resultEmbed] });
+        console.log('[VOTE] Result embed sent to match channel');
         
         // Delete vote data from memory
         activeMatches.delete(matchId);
-        console.log(`Match data deleted for ${matchId}`);
+        console.log('[VOTE] Match data deleted for matchId:', matchId);
+        console.log('[VOTE] Remaining active matches:', Array.from(activeMatches.keys()));
       } else {
         // Draw
+        console.log('[VOTE] Match ended in a draw');
         const matchChannel = await interaction.guild.channels.fetch(voteData.channelId);
         await matchChannel.send({
           content: '⚖️ Draw! No team won.',
           ephemeral: false,
         });
+        activeMatches.delete(matchId);
+        console.log('[VOTE] Match data deleted after draw');
       }
     }
   } catch (error) {
-    console.error('Error in voting:', error);
+    console.error('[VOTE] Error in voting:', error);
+    console.error('[VOTE] Stack:', error.stack);
     await interaction.editReply({
-      content: '❌ Error during voting!',
+      content: '❌ Error during voting!\n```' + error.message + '```',
       ephemeral: true,
     });
   }
