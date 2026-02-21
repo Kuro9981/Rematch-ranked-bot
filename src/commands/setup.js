@@ -4,13 +4,13 @@ const { loadQueue, saveQueue, loadTeams } = require('../utils/database');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('setup')
-    .setDescription('Crea una sala d\'attesa per la queue'),
+    .setDescription('Create a waiting room for the queue'),
   
   async execute(interaction) {
     try {
       const guildId = interaction.guildId;
       
-      // Crea i bottoni
+      // Create buttons
       const joinButton = new ButtonBuilder()
         .setCustomId('queue_join')
         .setLabel('➕ Join Queue')
@@ -24,17 +24,17 @@ module.exports = {
       const row = new ActionRowBuilder()
         .addComponents(joinButton, leaveButton);
       
-      // Embed iniziale
+      // Initial embed
       const embed = new EmbedBuilder()
         .setColor('#5865F2')
         .setTitle('🎮 Queue Matchmaking')
-        .setDescription('Clicca i bottoni per entrare o uscire dalla queue!')
+        .setDescription('Click the buttons to join or leave the queue!')
         .addFields(
-          { name: 'Team in Attesa', value: '0/2', inline: false }
+          { name: 'Teams Waiting', value: '0/2', inline: false }
         )
         .setFooter({ text: 'Rematch Ranked Bot' });
       
-      // Invia il messaggio
+      // Send the message
       await interaction.reply({
         embeds: [embed],
         components: [row],
@@ -42,8 +42,8 @@ module.exports = {
       });
       
     } catch (error) {
-      console.error('Errore setup:', error);
-      await interaction.reply({ content: 'Errore nella creazione della queue!', ephemeral: true });
+      console.error('Setup error:', error);
+      await interaction.reply({ content: 'Error creating the queue!', ephemeral: true });
     }
   },
 };

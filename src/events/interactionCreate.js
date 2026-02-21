@@ -2,6 +2,9 @@ const { PermissionFlagsBits, EmbedBuilder, ButtonBuilder, ActionRowBuilder, Butt
 const { loadTeams, loadQueue, saveQueue, loadMatches, saveMatches, saveTeams } = require('../utils/database');
 const { calculateMMRChange } = require('../utils/mmr');
 
+// Store temporaneo per i dati dei match durante il voto
+const activeMatches = new Map();
+
 module.exports = {
   name: 'interactionCreate',
   async execute(interaction, client) {
@@ -39,13 +42,13 @@ module.exports = {
         const teams = await loadTeams();
         const queue = await loadQueue();
 
-        // Bottoni di votazione per il vincitore
+        // Vote buttons for winner
         if (customId.startsWith('vote_')) {
           await handleVote(interaction);
           return;
         }
 
-        // Trova il team del capitano
+        // Find team of captain
         let userTeam = null;
         for (const [teamId, team] of Object.entries(teams)) {
           if (team.captain === interaction.user.id) {
@@ -57,27 +60,27 @@ module.exports = {
         if (customId === 'queue_join') {
           if (!userTeam) {
             return await interaction.reply({ 
-              content: '❌ Devi essere capitano di un team per entrare in queue!', 
+              content: '❌ You must be a team captain to join the queue!', 
               ephemeral: true 
             });
           }
           
-          // Controlla se il team è già in queue
+          // Check if team is already in queue
           if (queue.some(teamId => teamId === userTeam.id)) {
             return await interaction.reply({ 
-              content: '❌ Il tuo team è già nella queue!', 
+              content: '❌ Your team is already in the queue!', 
               ephemeral: true 
             });
           }
           
-          // Aggiungi il team alla queue
+          // Add team to queue
           queue.push(userTeam.id);
           await saveQueue(queue);
           
-          // Aggiorna il messaggio
+          // Update message
           await updateQueueMessage(interaction, queue, teams);
           
-          // Se sono 2 team, avvia il match
+          // If 2 teams, start match
           if (queue.length === 2) {
             await startMatch(interaction, queue, teams);
           }
@@ -85,43 +88,43 @@ module.exports = {
         } else if (customId === 'queue_leave') {
           if (!userTeam) {
             return await interaction.reply({ 
-              content: '❌ Devi essere capitano di un team!', 
+              content: '❌ You must be a team captain!', 
               ephemeral: true 
             });
           }
           
-          // Rimuovi il team dalla queue
+          // Remove team from queue
           const index = queue.indexOf(userTeam.id);
           if (index > -1) {
             queue.splice(index, 1);
             await saveQueue(queue);
             
-            // Aggiorna il messaggio
+            // Update message
             await updateQueueMessage(interaction, queue, teams);
           } else {
             return await interaction.reply({ 
-              content: '❌ Il tuo team non è nella queue!', 
+              content: '❌ Your team is not in the queue!', 
               ephemeral: true 
             });
           }
         }
       }
     } catch (error) {
-      console.error('Errore:', error);
+      console.error('Error:', error);
     }
   },
 };
 
-// Funzione per aggiornare il messaggio della queue
+// Function to update queue message
 async function updateQueueMessage(interaction, queue, teams) {
-  let description = 'Clicca i bottoni per entrare o uscire dalla queue!\\n\\n';
+  let description = 'Click the buttons to join or leave the queue!\\n\\n';
   
   if (queue.length === 0) {
-    description += '**Nessun team in attesa...**';
+    description += '**No teams waiting...**';
   } else {
     queue.forEach((teamId, index) => {
       const team = teams[teamId];
-      description += `**${index + 1}. ${team.name}** (${team.members.length} giocatori)\\n`;
+      description += `**${index + 1}. ${team.name}** (${team.members.length} players)\\n`;
     });
   }
   
@@ -130,19 +133,19 @@ async function updateQueueMessage(interaction, queue, teams) {
     .setTitle('🎮 Queue Matchmaking')
     .setDescription(description)
     .addFields(
-      { name: 'Team in Attesa', value: `${queue.length}/2`, inline: false }
+      { name: 'Teams Waiting', value: `${queue.length}/2`, inline: false }
     )
     .setFooter({ text: 'Rematch Ranked Bot' });
   
   await interaction.message.edit({ embeds: [embed] });
   
   await interaction.reply({ 
-    content: queue.length === 1 ? '✅ Team aggiunto!' : '✅ Team aggiunto! In attesa del secondo team...', 
+    content: queue.length === 1 ? '✅ Team added!' : '✅ Team added! Waiting for the second team...', 
     ephemeral: true 
   });
 }
 
-// Funzione per avviare il match
+// Function to start match
 async function startMatch(interaction, queue, teams) {
   const team1 = teams[queue[0]];
   const team2 = teams[queue[1]];
@@ -152,14 +155,14 @@ async function startMatch(interaction, queue, teams) {
   try {
     console.log(`Creating match channel for ${team1.name} vs ${team2.name}`);
     
-    // Prendi la categoria del canale attuale
+    // Get category of current channel
     const category = interaction.channel.parent;
     const categoryId = category ? category.id : null;
     
     console.log(`Category ID: ${categoryId}`);
     console.log(`Team 1 Captain: ${team1.captain}, Team 2 Captain: ${team2.captain}`);
     
-    // Crea il canale privato per il match
+    // Create private channel for match
     const matchChannel = await guild.channels.create({
       name: `match-${team1.name.toLowerCase().replace(/\s+/g, '-')}-vs-${team2.name.toLowerCase().replace(/\s+/g, '-')}`,
       type: ChannelType.GuildText,
@@ -182,7 +185,7 @@ async function startMatch(interaction, queue, teams) {
     
     console.log(`Match channel created: ${matchChannel.id}`);
     
-    // Crea bottoni per votare il vincitore
+    // Create buttons to vote for winner
     const voteTeam1Button = new ButtonBuilder()
       .setCustomId(`vote_${matchId}_${queue[0]}`)
       .setLabel(`🔵 Vote ${team1.name}`)
@@ -200,15 +203,15 @@ async function startMatch(interaction, queue, teams) {
       .setColor('#FFA500')
       .setTitle('⚔️ MATCH IN PROGRESS!')
       .addFields(
-        { name: team1.name, value: `👥 Giocatori: ${team1.members.length}\n📊 MMR: ${team1.mmr}`, inline: true },
-        { name: team2.name, value: `👥 Giocatori: ${team2.members.length}\n📊 MMR: ${team2.mmr}`, inline: true },
-        { name: '🗳️ Votazione Vincitore', value: 'Clicca il bottone del team che ha vinto!\n(Entrambi i capitani devono votare)', inline: false }
+        { name: team1.name, value: `👥 Players: ${team1.members.length}\n📊 MMR: ${team1.mmr}`, inline: true },
+        { name: team2.name, value: `👥 Players: ${team2.members.length}\n📊 MMR: ${team2.mmr}`, inline: true },
+        { name: '🗳️ Winner Vote', value: 'Click the button of the winning team!\n(Both captains must vote)', inline: false }
       )
       .setFooter({ text: 'Match ID: ' + matchId });
     
     const voteMessage = await matchChannel.send({ embeds: [embed], components: [voteRow] });
     
-    // Salva lo stato della votazione
+    // Save voting status
     const voteData = {
       matchId,
       team1: queue[0],
@@ -219,67 +222,34 @@ async function startMatch(interaction, queue, teams) {
       createdAt: new Date().toISOString(),
     };
     
-    // Salva i dati della votazione in Redis
-    await saveMatchVote(voteData);
+    // Save voting status in memory
+    activeMatches.set(matchId, voteData);
     
-    // Notifica nel canale della queue
+    console.log(`Match data saved for ${matchId}`);
+    
+    // Notify in queue channel
     const notifyEmbed = new EmbedBuilder()
       .setColor('#00FF00')
-      .setTitle('✅ MATCH INIZIATO!')
-      .setDescription(`**${team1.name}** vs **${team2.name}**\n\n📍 Canale privato creato per la votazione: <#${matchChannel.id}>`)
+      .setTitle('✅ MATCH STARTED!')
+      .setDescription(`**${team1.name}** vs **${team2.name}**\n\n📍 Private channel created for voting: <#${matchChannel.id}>`)
       .setFooter({ text: 'Match ID: ' + matchId });
     
     await interaction.channel.send({ embeds: [notifyEmbed] });
     
-    // Svuota la queue dopo l'avvio del match
+    // Clear queue after match starts
     await saveQueue([]);
     
   } catch (error) {
-    console.error('Errore nella creazione del canale di match:', error);
+    console.error('Error creating match channel:', error);
     console.error('Stack:', error.stack);
     await interaction.channel.send({
-      content: '❌ Errore nella creazione del canale di match!\n```' + error.message + '```',
+      content: '❌ Error creating match channel!\n```' + error.message + '```',
       ephemeral: false,
     });
   }
 }
 
-// Funzione per salvare i dati della votazione
-async function saveMatchVote(voteData) {
-  const redis = require('redis');
-  const client = redis.createClient({
-    url: process.env.REDIS_URL || 'redis://localhost:6379',
-  });
-  
-  try {
-    await client.connect();
-    const INSTANCE_ID = process.env.INSTANCE_ID || 'default';
-    const key = `${INSTANCE_ID}:match_votes:${voteData.matchId}`;
-    await client.set(key, JSON.stringify(voteData));
-  } finally {
-    await client.quit();
-  }
-}
-
-// Funzione per caricare i dati della votazione
-async function loadMatchVote(matchId) {
-  const redis = require('redis');
-  const client = redis.createClient({
-    url: process.env.REDIS_URL || 'redis://localhost:6379',
-  });
-  
-  try {
-    await client.connect();
-    const INSTANCE_ID = process.env.INSTANCE_ID || 'default';
-    const key = `${INSTANCE_ID}:match_votes:${matchId}`;
-    const data = await client.get(key);
-    return data ? JSON.parse(data) : null;
-  } finally {
-    await client.quit();
-  }
-}
-
-// Funzione per gestire i voti
+// Function to handle votes
 async function handleVote(interaction) {
   try {
     await interaction.deferReply({ ephemeral: true });
@@ -289,12 +259,13 @@ async function handleVote(interaction) {
     const matchId = parts[1];
     const votedTeamId = parts[2];
     
-    // Carica i dati della votazione
-    const voteData = await loadMatchVote(matchId);
+    // Load vote data
+    const voteData = activeMatches.get(matchId);
     
     if (!voteData) {
+      console.log(`Match data not found for ${matchId}. Available matches: ${Array.from(activeMatches.keys()).join(', ')}`);
       return await interaction.editReply({
-        content: '❌ Non trovato il match per questa votazione!',
+        content: '❌ Match not found for this vote!',
         ephemeral: true,
       });
     }
@@ -304,32 +275,32 @@ async function handleVote(interaction) {
     
     if (!userTeamId) {
       return await interaction.editReply({
-        content: '❌ Devi essere capitano di un team!',
+        content: '❌ You must be a team captain!',
         ephemeral: true,
       });
     }
     
-    // Controlla se il capitano è una delle due squadre del match
+    // Check if captain is one of the two match teams
     if (userTeamId !== voteData.team1 && userTeamId !== voteData.team2) {
       return await interaction.editReply({
-        content: '❌ Il tuo team non è parte di questo match!',
+        content: '❌ Your team is not part of this match!',
         ephemeral: true,
       });
     }
     
-    // Registra il voto
+    // Register vote
     voteData.votes[userTeamId] = votedTeamId;
-    await saveMatchVote(voteData);
+    activeMatches.set(matchId, voteData);
     
     const votedTeamName = teams[votedTeamId].name;
     await interaction.editReply({
-      content: `✅ Hai votato per **${votedTeamName}**!`,
+      content: `✅ You voted for **${votedTeamName}**!`,
       ephemeral: true,
     });
     
-    // Controlla se entrambi i team hanno votato
+    // Check if both teams have voted
     if (Object.keys(voteData.votes).length === 2) {
-      // Conta i voti
+      // Count votes
       const votes = Object.values(voteData.votes);
       const team1Votes = votes.filter(v => v === voteData.team1).length;
       const team2Votes = votes.filter(v => v === voteData.team2).length;
@@ -340,38 +311,38 @@ async function handleVote(interaction) {
       } else if (team2Votes > team1Votes) {
         winner = voteData.team2;
       } else {
-        // Pareggio - può essere gestito come preferisci
+        // Draw
         winner = null;
       }
       
-      // Aggiorna il team vincitore
+      // Update winner team
       if (winner) {
         const updatedTeams = await loadTeams();
         const winnerTeam = updatedTeams[winner];
         const loserTeamId = winner === voteData.team1 ? voteData.team2 : voteData.team1;
         const loserTeam = updatedTeams[loserTeamId];
         
-        // Aggiorna i dati del team vincitore
+        // Update team data
         winnerTeam.wins++;
         loserTeam.losses++;
         
-        // Calcola e applica i cambiamenti di MMR
+        // Calculate and apply MMR changes
         const { winnerChange, loserChange } = calculateMMRChange(winnerTeam.mmr, loserTeam.mmr);
         
         winnerTeam.mmr += winnerChange;
         loserTeam.mmr = Math.max(0, loserTeam.mmr + loserChange);
         
-        // Salva i team aggiornati
+        // Save updated teams
         await saveTeams(updatedTeams);
         
-        // Invia il messaggio di fine match nel canale del match
+        // Send match end message in match channel
         const matchChannel = await interaction.guild.channels.fetch(voteData.channelId);
         
         const resultEmbed = new EmbedBuilder()
           .setColor('#00FF00')
-          .setTitle('🏆 MATCH TERMINATO!')
+          .setTitle('🏆 MATCH ENDED!')
           .addFields(
-            { name: '👑 Vincitore', value: winnerTeam.name, inline: false },
+            { name: '👑 Winner', value: winnerTeam.name, inline: false },
             { name: `📊 ${winnerTeam.name}`, value: `MMR: **${winnerTeam.mmr}** (${winnerChange > 0 ? '+' : ''}${winnerChange})`, inline: true },
             { name: `📊 ${loserTeam.name}`, value: `MMR: **${loserTeam.mmr}** (${loserChange})`, inline: true }
           )
@@ -379,33 +350,22 @@ async function handleVote(interaction) {
         
         await matchChannel.send({ embeds: [resultEmbed] });
         
-        // Elimina i dati della votazione
-        const redis = require('redis');
-        const client = redis.createClient({
-          url: process.env.REDIS_URL || 'redis://localhost:6379',
-        });
-        
-        try {
-          await client.connect();
-          const INSTANCE_ID = process.env.INSTANCE_ID || 'default';
-          const key = `${INSTANCE_ID}:match_votes:${matchId}`;
-          await client.del(key);
-        } finally {
-          await client.quit();
-        }
+        // Delete vote data from memory
+        activeMatches.delete(matchId);
+        console.log(`Match data deleted for ${matchId}`);
       } else {
-        // Pareggio
+        // Draw
         const matchChannel = await interaction.guild.channels.fetch(voteData.channelId);
         await matchChannel.send({
-          content: '⚖️ Pareggio! Nessun team ha vinto.',
+          content: '⚖️ Draw! No team won.',
           ephemeral: false,
         });
       }
     }
   } catch (error) {
-    console.error('Errore nella votazione:', error);
+    console.error('Error in voting:', error);
     await interaction.editReply({
-      content: '❌ Errore durante la votazione!',
+      content: '❌ Error during voting!',
       ephemeral: true,
     });
   }
