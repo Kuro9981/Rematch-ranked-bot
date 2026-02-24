@@ -4,7 +4,7 @@ const { loadTeams, loadAutoQueue, saveAutoQueue, loadQueueConfig } = require('..
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('autojoinqueue')
-    .setDescription('Join the automatic match queue (Captain only)')
+    .setDescription('Join the automatic match queue (Team members only)')
     .addStringOption((option) =>
       option
         .setName('team')
@@ -25,10 +25,14 @@ module.exports = {
       });
     }
 
-    // Check if user is captain
-    if (teams[teamName].captain !== interaction.user.id) {
+    // Check if user is captain or team member
+    const team = teams[teamName];
+    const isCaptain = team.captain === interaction.user.id;
+    const isMember = team.members && team.members.includes(interaction.user.id);
+
+    if (!isCaptain && !isMember) {
       return interaction.reply({
-        content: `❌ Only the captain of **${teamName}** can queue!`,
+        content: `❌ You must be a member of **${teamName}** to queue!`,
         ephemeral: true,
       });
     }
@@ -53,20 +57,18 @@ module.exports = {
       });
     }
 
-    // Add to queue
-    autoQueue.push({
+    // Add to queue - use captain ID or current user ID
+    const queueEntry = {
       teamName,
-      captainId: interaction.user.id,
-      mmr: teams[teamName].mmr,
+      captainId: isCaptain ? interaction.user.id : team.captain,
+      mmr: team.mmr,
       addedAt: Date.now(),
-      waitTime: 0, // Will be used to calculate exponential range
-    });
+      waitTime: 0,
+    };
 
+    autoQueue.push(queueEntry);
     await saveAutoQueue(guildId, autoQueue);
 
+    const userRole = isCaptain ? 'Captain' : 'Team Member';
     return interaction.reply({
-      content: `✅ **${teamName}** joined the queue!\n\n📊 Current MMR: ${teams[teamName].mmr}\n⏳ Finding opponents...`,
-      ephemeral: true,
-    });
-  },
-};
+      content: `✅ **${teamName}** joined the queue! (Added by ${userRole})\n\n📊 Current MMR: ${team.mmr}\n⏳ Finding opponents...`,

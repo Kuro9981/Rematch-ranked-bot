@@ -1,10 +1,11 @@
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const { loadQueue, saveQueue, loadTeams } = require('../utils/database');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('setup')
-    .setDescription('Create a waiting room for the queue'),
+    .setDescription('Create a waiting room for the queue (Admin only)')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   
   async execute(interaction) {
     try {
