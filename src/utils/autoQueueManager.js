@@ -133,6 +133,27 @@ async function createAutoMatch(guild, team1, team2, queueConfig, client) {
 }
 
 /**
+ * Calculate uptime string from a start timestamp
+ * @param {number} startTime - Start timestamp in milliseconds
+ * @returns {string} Formatted uptime string
+ */
+function calculateUptime(startTime) {
+  const uptime = Date.now() - startTime;
+  const seconds = Math.floor((uptime / 1000) % 60);
+  const minutes = Math.floor((uptime / (1000 * 60)) % 60);
+  const hours = Math.floor((uptime / (1000 * 60 * 60)) % 24);
+  const days = Math.floor(uptime / (1000 * 60 * 60 * 24));
+
+  const parts = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
+
+  return parts.join(' ');
+}
+
+/**
  * Update the queue display message in the channel
  * @param {Client} client - Discord client
  * @param {string} guildId - Guild ID
@@ -153,6 +174,9 @@ async function updateQueueDisplay(client, guildId, queueConfig, queue) {
     if (!message) return;
 
     const queueStatus = getQueueStatus(queue);
+
+    // Calculate uptime
+    const uptime = queueConfig.startedAt ? calculateUptime(queueConfig.startedAt) : 'N/A';
 
     // Build queue list
     let queueList = '';
@@ -211,6 +235,11 @@ async function updateQueueDisplay(client, guildId, queueConfig, queue) {
               value: 'Auto-polling every 3 seconds',
               inline: true,
             },
+            {
+              name: '⏱️ Uptime',
+              value: `${uptime}`,
+              inline: true,
+            },
           ],
           timestamp: new Date(),
         },
@@ -242,4 +271,5 @@ module.exports = {
   initializeQueuePolling,
   createAutoMatch,
   updateQueueDisplay,
+  calculateUptime,
 };

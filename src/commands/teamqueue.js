@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { loadTeams, loadQueue, loadAutoQueue, loadQueueConfig, findTeamByName } = require('../utils/database');
+const { calculateUptime } = require('../utils/autoQueueManager');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -64,6 +65,7 @@ module.exports = {
         const waitTimeMinutes = autoQueueEntry ? Math.floor((Date.now() - autoQueueEntry.addedAt) / 60000) : 0;
         const queueConfig = await loadQueueConfig(guildId);
         const queueChannel = queueConfig.queueChannelId ? `<#${queueConfig.queueChannelId}>` : 'Unknown Channel';
+        const queueUptime = queueConfig.startedAt ? calculateUptime(queueConfig.startedAt) : 'N/A';
         
         if (queueStatus !== '❌ Not in any queue') {
           queueStatus += ' + **Auto Queue**';
@@ -74,7 +76,7 @@ module.exports = {
 
         queuesInfo.push({
           name: '🤖 Auto Queue (Auto-Polling)',
-          value: `Channel: ${queueChannel}\nPosition: #${position} / ${autoQueue.length}\n⏱️ Wait Time: ${waitTimeMinutes}m\n📊 Current MMR: ${autoQueueEntry.mmr}`,
+          value: `Channel: ${queueChannel}\nPosition: #${position} / ${autoQueue.length}\n⏱️ Wait Time: ${waitTimeMinutes}m\n📊 Current MMR: ${autoQueueEntry.mmr}\n⏱️ Queue Uptime: ${queueUptime}`,
           inline: false,
         });
       }

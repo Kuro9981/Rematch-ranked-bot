@@ -23,6 +23,7 @@ module.exports = {
       const config = await loadQueueConfig(guildId);
       config.queueChannelId = channel.id;
       config.enabled = true;
+      config.startedAt = Date.now(); // Track when queue started for uptime
       await saveQueueConfig(guildId, config);
 
       // Send initial queue message
