@@ -72,3 +72,7 @@ module.exports = {
     const userRole = isCaptain ? 'Captain' : 'Team Member';
     return interaction.reply({
       content: `✅ **${teamName}** joined the queue! (Added by ${userRole})\n\n📊 Current MMR: ${team.mmr}\n⏳ Finding opponents...`,
+      ephemeral: true,
+    });
+  },
+};
