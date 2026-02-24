@@ -1,0 +1,293 @@
+const {
+  loadTeams,
+  loadAutoQueue,
+  saveAutoQueue,
+  loadQueueConfig,
+  loadMatches,
+  saveMatches,
+} = require('../utils/database');
+const { findAllMatches, getQueueStatus } = require('../utils/queueMatcher');
+const { ChannelType } = require('discord.js');
+
+// Store polling intervals per guild
+const pollingIntervals = new Map();
+
+/**
+ * Start the queue polling system for a guild
+ * @param {Client} client - Discord client
+ * @param {string} guildId - Guild ID to start polling for
+ */
+async function startQueuePolling(client, guildId) {
+  if (pollingIntervals.has(guildId)) return; // Already polling
+
+  const polling = setInterval(async () => {
+    try {
+      const queueConfig = await loadQueueConfig(guildId);
+
+      // Skip if queue not configured
+      if (!queueConfig.enabled || !queueConfig.queueChannelId) {
+        return;
+      }
+
+      const queue = await loadAutoQueue(guildId);
+      if (queue.length === 0) return;
+
+      // Find all possible matches
+      const matches = findAllMatches(queue);
+
+      // Process matches
+      if (matches.length > 0) {
+        const guild = client.guilds.cache.get(guildId);
+        if (!guild) return;
+
+        for (const [team1, team2] of matches) {
+          await createAutoMatch(guild, team1, team2, queueConfig, client);
+        }
+
+        // Remove matched teams from queue
+        const matchedTeams = new Set();
+        matches.forEach(([t1, t2]) => {
+          matchedTeams.add(t1.teamName);
+          matchedTeams.add(t2.teamName);
+        });
+
+        const newQueue = queue.filter((t) => !matchedTeams.has(t.teamName));
+        await saveAutoQueue(guildId, newQueue);
+      }
+
+      // Update queue display
+      await updateQueueDisplay(client, guildId, queueConfig, queue);
+    } catch (error) {
+      console.error('Error in queue polling:', error);
+    }
+  }, 3000); // Poll every 3 seconds
+
+  pollingIntervals.set(guildId, polling);
+}
+
+/**
+ * Stop queue polling for a guild
+ * @param {string} guildId - Guild ID
+ */
+function stopQueuePolling(guildId) {
+  if (pollingIntervals.has(guildId)) {
+    clearInterval(pollingIntervals.get(guildId));
+    pollingIntervals.delete(guildId);
+  }
+}
+
+/**
+ * Create a match from queue teams
+ * @param {Guild} guild - Discord Guild
+ * @param {Object} team1 - First team object
+ * @param {Object} team2 - Second team object
+ * @param {Object} queueConfig - Queue configuration
+ * @param {Client} client - Discord client
+ */
+async function createAutoMatch(guild, team1, team2, queueConfig, client) {
+  try {
+    // Create private channel
+    const matchChannel = await guild.channels.create({
+      name: `match-${team1.teamName.toLowerCase()}-vs-${team2.teamName.toLowerCase()}`.substring(0, 100),
+      type: ChannelType.GuildText,
+      permissionOverwrites: [
+        {
+          id: guild.id,
+          deny: ['ViewChannel'],
+        },
+        {
+          id: team1.captainId,
+          allow: ['ViewChannel', 'SendMessages'],
+        },
+        {
+          id: team2.captainId,
+          allow: ['ViewChannel', 'SendMessages'],
+        },
+      ],
+    });
+
+    // Store match data
+    const matches = await loadMatches();
+    const match = {
+      id: `match_${Date.now()}`,
+      team1: team1.teamName,
+      team2: team2.teamName,
+      team1Captain: team1.captainId,
+      team2Captain: team2.captainId,
+      team1MMR: team1.mmr,
+      team2MMR: team2.mmr,
+      channelId: matchChannel.id,
+      status: 'active',
+      winner: null,
+      confirmations: [],
+      createdAt: new Date().toISOString(),
+      autoMatched: true,
+    };
+
+    matches.push(match);
+    await saveMatches(matches);
+
+    // Send match embed to match channel
+    const mmrDiff = Math.abs(team1.mmr - team2.mmr);
+    const matchInfo = `🎮 **AUTO-MATCHED!**\n\n`;
+
+    await matchChannel.send({
+      embeds: [
+        {
+          title: '⚔️ Match Started',
+          description: matchInfo,
+          fields: [
+            {
+              name: '🔵 ' + team1.teamName,
+              value: `${team1.mmr} MMR`,
+              inline: true,
+            },
+            {
+              name: '🔴 ' + team2.teamName,
+              value: `${team2.mmr} MMR`,
+              inline: true,
+            },
+            {
+              name: '📊 MMR Difference',
+              value: `${mmrDiff} points`,
+              inline: false,
+            },
+            {
+              name: '💬 Instructions',
+              value: 'Both captains must use `/win` command to confirm the winner and finalize the match results.',
+              inline: false,
+            },
+          ],
+          color: 0xff0000,
+          timestamp: new Date(),
+        },
+      ],
+    });
+
+    // Notify captains via DM
+    const team1User = await client.users.fetch(team1.captainId).catch(() => null);
+    const team2User = await client.users.fetch(team2.captainId).catch(() => null);
+
+    if (team1User) {
+      team1User
+        .send(
+          `🎮 **Your team ${team1.teamName} has been matched!**\n\n🆚 vs **${team2.teamName}** (${team2.mmr} MMR)\n📍 <#${matchChannel.id}>`
+        )
+        .catch(() => {});
+    }
+
+    if (team2User) {
+      team2User
+        .send(
+          `🎮 **Your team ${team2.teamName} has been matched!**\n\n🆚 vs **${team1.teamName}** (${team1.mmr} MMR)\n📍 <#${matchChannel.id}>`
+        )
+        .catch(() => {});
+    }
+
+    // Notify in queue channel
+    const queueChannel = guild.channels.cache.get(queueConfig.queueChannelId);
+    if (queueChannel) {
+      await queueChannel.send({
+        embeds: [
+          {
+            title: '✅ Match Found!',
+            description: `**${team1.teamName}** (${team1.mmr} MMR) vs **${team2.teamName}** (${team2.mmr} MMR)`,
+            color: 0x00ff00,
+            timestamp: new Date(),
+          },
+        ],
+      });
+    }
+  } catch (error) {
+    console.error('Error creating auto match:', error);
+  }
+}
+
+/**
+ * Update the queue display message in the channel
+ * @param {Client} client - Discord client
+ * @param {string} guildId - Guild ID
+ * @param {Object} queueConfig - Queue configuration
+ * @param {Array} queue - Current queue
+ */
+async function updateQueueDisplay(client, guildId, queueConfig, queue) {
+  try {
+    if (!queueConfig.queueChannelId || !queueConfig.queueMessageId) return;
+
+    const guild = client.guilds.cache.get(guildId);
+    if (!guild) return;
+
+    const channel = guild.channels.cache.get(queueConfig.queueChannelId);
+    if (!channel) return;
+
+    const message = await channel.messages.fetch(queueConfig.queueMessageId).catch(() => null);
+    if (!message) return;
+
+    const queueStatus = getQueueStatus(queue);
+
+    // Build queue list
+    let queueList = '';
+    if (queueStatus.length === 0) {
+      queueList = 'No teams in queue. Use `/autojoinqueue` to join!';
+    } else {
+      queueList = queueStatus
+        .map(
+          (team, index) =>
+            `${index + 1}. **${team.teamName}** - ${team.mmr} MMR (⏱️ ${team.waitTimeMinutes}m, 📊 ±${team.currentRange})`
+        )
+        .join('\n');
+    }
+
+    await message.edit({
+      embeds: [
+        {
+          title: '📋 Match Queue',
+          description: queueList,
+          color: 0x0099ff,
+          fields: [
+            {
+              name: '⏳ Status',
+              value: queueStatus.length === 0 ? 'Waiting for teams...' : 'Finding matches...',
+              inline: false,
+            },
+            {
+              name: '👥 Teams in Queue',
+              value: queueStatus.length.toString(),
+              inline: true,
+            },
+            {
+              name: '🤖 System',
+              value: 'Auto-polling every 3 seconds',
+              inline: true,
+            },
+          ],
+          timestamp: new Date(),
+        },
+      ],
+    });
+  } catch (error) {
+    console.error('Error updating queue display:', error);
+  }
+}
+
+/**
+ * Initialize queue polling for all guilds when bot starts
+ * @param {Client} client - Discord client
+ */
+async function initializeQueuePolling(client) {
+  try {
+    for (const guild of client.guilds.cache.values()) {
+      startQueuePolling(client, guild.id);
+    }
+  } catch (error) {
+    console.error('Error initializing queue polling:', error);
+  }
+}
+
+module.exports = {
+  startQueuePolling,
+  stopQueuePolling,
+  initializeQueuePolling,
+  createAutoMatch,
+  updateQueueDisplay,
+};

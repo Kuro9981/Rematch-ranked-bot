@@ -110,6 +110,44 @@ async function saveRanks(ranks) {
   }
 }
 
+// Auto Queue functions (per-guild)
+async function loadAutoQueue(guildId) {
+  try {
+    const data = await client.get(`${INSTANCE_ID}:autoqueue:${guildId}`);
+    return data ? JSON.parse(data) : [];
+  } catch (error) {
+    console.error('Error loading auto queue:', error);
+    return [];
+  }
+}
+
+async function saveAutoQueue(guildId, queue) {
+  try {
+    await client.set(`${INSTANCE_ID}:autoqueue:${guildId}`, JSON.stringify(queue));
+  } catch (error) {
+    console.error('Error saving auto queue:', error);
+  }
+}
+
+// Queue Configuration functions (per-guild)
+async function loadQueueConfig(guildId) {
+  try {
+    const data = await client.get(`${INSTANCE_ID}:queueconfig:${guildId}`);
+    return data ? JSON.parse(data) : { enabled: false, queueChannelId: null, queueMessageId: null };
+  } catch (error) {
+    console.error('Error loading queue config:', error);
+    return { enabled: false, queueChannelId: null, queueMessageId: null };
+  }
+}
+
+async function saveQueueConfig(guildId, config) {
+  try {
+    await client.set(`${INSTANCE_ID}:queueconfig:${guildId}`, JSON.stringify(config));
+  } catch (error) {
+    console.error('Error saving queue config:', error);
+  }
+}
+
 module.exports = {
   loadTeams,
   loadMatches,
@@ -121,4 +159,8 @@ module.exports = {
   saveRanks,
   findTeamByName,
   DEFAULT_RANKS,
+  loadAutoQueue,
+  saveAutoQueue,
+  loadQueueConfig,
+  saveQueueConfig,
 };
