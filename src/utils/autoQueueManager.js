@@ -3,11 +3,10 @@ const {
   loadAutoQueue,
   saveAutoQueue,
   loadQueueConfig,
-  loadMatches,
-  saveMatches,
 } = require('../utils/database');
 const { findAllMatches, getQueueStatus } = require('../utils/queueMatcher');
-const { ChannelType } = require('discord.js');
+const { createMatchChannel, sendMatchInfo, notifyCaptains } = require('../utils/matchManager');
+const { ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
 
 // Store polling intervals per guild
 const pollingIntervals = new Map();
@@ -86,103 +85,14 @@ function stopQueuePolling(guildId) {
  */
 async function createAutoMatch(guild, team1, team2, queueConfig, client) {
   try {
-    // Create private channel
-    const matchChannel = await guild.channels.create({
-      name: `match-${team1.teamName.toLowerCase()}-vs-${team2.teamName.toLowerCase()}`.substring(0, 100),
-      type: ChannelType.GuildText,
-      permissionOverwrites: [
-        {
-          id: guild.id,
-          deny: ['ViewChannel'],
-        },
-        {
-          id: team1.captainId,
-          allow: ['ViewChannel', 'SendMessages'],
-        },
-        {
-          id: team2.captainId,
-          allow: ['ViewChannel', 'SendMessages'],
-        },
-      ],
-    });
+    // Create match channel and match data
+    const { matchChannel, match } = await createMatchChannel(guild, team1, team2, true);
 
-    // Store match data
-    const matches = await loadMatches();
-    const match = {
-      id: `match_${Date.now()}`,
-      team1: team1.teamName,
-      team2: team2.teamName,
-      team1Captain: team1.captainId,
-      team2Captain: team2.captainId,
-      team1MMR: team1.mmr,
-      team2MMR: team2.mmr,
-      channelId: matchChannel.id,
-      status: 'active',
-      winner: null,
-      confirmations: [],
-      createdAt: new Date().toISOString(),
-      autoMatched: true,
-    };
-
-    matches.push(match);
-    await saveMatches(matches);
-
-    // Send match embed to match channel
-    const mmrDiff = Math.abs(team1.mmr - team2.mmr);
-    const matchInfo = `🎮 **AUTO-MATCHED!**\n\n`;
-
-    await matchChannel.send({
-      embeds: [
-        {
-          title: '⚔️ Match Started',
-          description: matchInfo,
-          fields: [
-            {
-              name: '🔵 ' + team1.teamName,
-              value: `${team1.mmr} MMR`,
-              inline: true,
-            },
-            {
-              name: '🔴 ' + team2.teamName,
-              value: `${team2.mmr} MMR`,
-              inline: true,
-            },
-            {
-              name: '📊 MMR Difference',
-              value: `${mmrDiff} points`,
-              inline: false,
-            },
-            {
-              name: '💬 Instructions',
-              value: 'Both captains must use `/win` command to confirm the winner and finalize the match results.',
-              inline: false,
-            },
-          ],
-          color: 0xff0000,
-          timestamp: new Date(),
-        },
-      ],
-    });
+    // Send match info to channel with auto-matched tag
+    await sendMatchInfo(matchChannel, team1, team2, true);
 
     // Notify captains via DM
-    const team1User = await client.users.fetch(team1.captainId).catch(() => null);
-    const team2User = await client.users.fetch(team2.captainId).catch(() => null);
-
-    if (team1User) {
-      team1User
-        .send(
-          `🎮 **Your team ${team1.teamName} has been matched!**\n\n🆚 vs **${team2.teamName}** (${team2.mmr} MMR)\n📍 <#${matchChannel.id}>`
-        )
-        .catch(() => {});
-    }
-
-    if (team2User) {
-      team2User
-        .send(
-          `🎮 **Your team ${team2.teamName} has been matched!**\n\n🆚 vs **${team1.teamName}** (${team1.mmr} MMR)\n📍 <#${matchChannel.id}>`
-        )
-        .catch(() => {});
-    }
+    await notifyCaptains(client, team1, team2, matchChannel.id);
 
     // Notify in queue channel
     const queueChannel = guild.channels.cache.get(queueConfig.queueChannelId);
@@ -228,7 +138,7 @@ async function updateQueueDisplay(client, guildId, queueConfig, queue) {
     // Build queue list
     let queueList = '';
     if (queueStatus.length === 0) {
-      queueList = 'No teams in queue. Use `/autojoinqueue` to join!';
+      queueList = 'No teams in queue. Click the buttons below to join!';
     } else {
       queueList = queueStatus
         .map(
@@ -237,6 +147,28 @@ async function updateQueueDisplay(client, guildId, queueConfig, queue) {
         )
         .join('\n');
     }
+
+    // Create buttons
+    const joinButton = new ButtonBuilder()
+      .setCustomId('autojoinqueue_join')
+      .setLabel('➕ Join Queue')
+      .setStyle(ButtonStyle.Success);
+
+    const leaveButton = new ButtonBuilder()
+      .setCustomId('autojoinqueue_leave')
+      .setLabel('❌ Leave Queue')
+      .setStyle(ButtonStyle.Danger);
+
+    const row1 = new ActionRowBuilder()
+      .addComponents(joinButton, leaveButton);
+
+    const closeButton = new ButtonBuilder()
+      .setCustomId('autojoinqueue_close')
+      .setLabel('🔒 Close Queue')
+      .setStyle(ButtonStyle.Secondary);
+
+    const row2 = new ActionRowBuilder()
+      .addComponents(closeButton);
 
     await message.edit({
       embeds: [
@@ -264,6 +196,7 @@ async function updateQueueDisplay(client, guildId, queueConfig, queue) {
           timestamp: new Date(),
         },
       ],
+      components: [row1, row2],
     });
   } catch (error) {
     console.error('Error updating queue display:', error);

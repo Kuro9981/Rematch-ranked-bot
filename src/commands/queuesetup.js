@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, ChannelType, PermissionFlagsBits, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
 const { loadQueueConfig, saveQueueConfig } = require('../utils/database');
 
 module.exports = {
@@ -26,11 +26,32 @@ module.exports = {
       await saveQueueConfig(guildId, config);
 
       // Send initial queue message
+      const joinButton = new ButtonBuilder()
+        .setCustomId('autojoinqueue_join')
+        .setLabel('➕ Join Queue')
+        .setStyle(ButtonStyle.Success);
+
+      const leaveButton = new ButtonBuilder()
+        .setCustomId('autojoinqueue_leave')
+        .setLabel('❌ Leave Queue')
+        .setStyle(ButtonStyle.Danger);
+
+      const row1 = new ActionRowBuilder()
+        .addComponents(joinButton, leaveButton);
+
+      const closeButton = new ButtonBuilder()
+        .setCustomId('autojoinqueue_close')
+        .setLabel('🔒 Close Queue')
+        .setStyle(ButtonStyle.Secondary);
+
+      const row2 = new ActionRowBuilder()
+        .addComponents(closeButton);
+
       const queueMessage = await channel.send({
         embeds: [
           {
             title: '📋 Match Queue',
-            description: 'No teams in queue. Use `/autojoinqueue` to join!',
+            description: 'No teams in queue. Use the buttons below to join!',
             color: 0x0099ff,
             fields: [
               {
@@ -52,6 +73,7 @@ module.exports = {
             timestamp: new Date(),
           },
         ],
+        components: [row1, row2],
       });
 
       // Save message ID for updates
@@ -59,7 +81,7 @@ module.exports = {
       await saveQueueConfig(guildId, config);
 
       return interaction.reply({
-        content: `✅ Queue channel set to <#${channel.id}>!\n\nUse \`/autojoinqueue\` command for teams to enter the queue.`,
+        content: `✅ Queue channel set to <#${channel.id}>!\n\nClick the buttons on the queue message to join or leave the automatic queue.`,
         ephemeral: true,
       });
     } catch (error) {

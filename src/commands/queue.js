@@ -1,6 +1,6 @@
-const { SlashCommandBuilder, ChannelType } = require('discord.js');
-const { loadTeams, loadQueue, saveQueue, loadMatches, saveMatches } = require('../utils/database');
-const { calculateMMRChange } = require('../utils/mmr');
+const { SlashCommandBuilder } = require('discord.js');
+const { loadTeams, loadQueue, saveQueue } = require('../utils/database');
+const { createMatchChannel, sendMatchInfo, notifyCaptains } = require('../utils/matchManager');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -53,7 +53,7 @@ module.exports = {
 
     // Check if we have 2 teams to match
     if (queue.length >= 2) {
-      await startMatch(interaction, queue, teams, saveQueue, loadMatches, saveMatches);
+      await startMatch(interaction, queue, teams, saveQueue);
     } else {
       interaction.reply({
         content: `✅ **${teamName}** queued for a match!\n⏳ Waiting for opponents... (${queue.length}/2 teams)`,
@@ -63,90 +63,31 @@ module.exports = {
   },
 };
 
-async function startMatch(interaction, queue, teams, saveQueue, loadMatches, saveMatches) {
+async function startMatch(interaction, queue, teams, saveQueue) {
   const team1 = queue[0];
   const team2 = queue[1];
 
-  // Create private channel for the match
   const guild = interaction.guild;
 
   try {
-    const matchChannel = await guild.channels.create({
-      name: `match-${team1.teamName.toLowerCase()}-vs-${team2.teamName.toLowerCase()}`,
-      type: ChannelType.GuildText,
-      permissionOverwrites: [
-        {
-          id: guild.id,
-          deny: ['ViewChannel'],
-        },
-        {
-          id: team1.captainId,
-          allow: ['ViewChannel', 'SendMessages'],
-        },
-        {
-          id: team2.captainId,
-          allow: ['ViewChannel', 'SendMessages'],
-        },
-      ],
-    });
+    // Create match channel and match data
+    const { matchChannel, match } = await createMatchChannel(guild, team1, team2);
 
-    // Store match data
-    const matches = await loadMatches();
-    const match = {
-      id: `match_${Date.now()}`,
-      team1: team1.teamName,
-      team2: team2.teamName,
-      team1Captain: team1.captainId,
-      team2Captain: team2.captainId,
-      channelId: matchChannel.id,
-      status: 'active',
-      winner: null,
-      confirmations: [],
-      createdAt: new Date().toISOString(),
-    };
-
-    matches.push(match);
-    await saveMatches(matches);
+    // Send match info to channel
+    await sendMatchInfo(matchChannel, team1, team2, false);
 
     // Remove teams from queue
     queue.shift();
     queue.shift();
     await saveQueue(queue);
 
-    // Send match info to channel
-    const matchInfo = `🎮 **MATCH START!**\n\n`;
-    matchInfo += `🔵 **${team1.teamName}** (${team1.mmr} MMR) vs 🔴 **${team2.teamName}** (${team2.mmr} MMR)\n\n`;
-    matchInfo += `Both captains must use \`/win\` command to report the winner and confirm the result.`;
+    // Notify captains via DM
+    await notifyCaptains(interaction.client, team1, team2, matchChannel.id);
 
-    await matchChannel.send({
-      embeds: [
-        {
-          title: '⚔️ Match Started',
-          description: matchInfo,
-          color: 0xff0000,
-          timestamp: new Date(),
-        },
-      ],
+    await interaction.reply({
+      content: `✅ Match started! **${team1.teamName}** (${team1.mmr} MMR) vs **${team2.teamName}** (${team2.mmr} MMR)\n📍 <#${matchChannel.id}>`,
+      ephemeral: false,
     });
-
-    // Notify captains
-    await interaction.client.users
-      .fetch(team1.captainId)
-      .then((user) =>
-        user.send(
-          `🎮 Your team **${team1.teamName}** is now in a match against **${team2.teamName}**!\n<#${matchChannel.id}>`
-        )
-      )
-      .catch(() => {});
-
-    await interaction.client.users
-      .fetch(team2.captainId)
-      .then((user) =>
-        user.send(
-          `🎮 Your team **${team2.teamName}** is now in a match against **${team1.teamName}**!\n<#${matchChannel.id}>`
-        )
-      )
-      .catch(() => {});
   } catch (error) {
     console.error('Error creating match channel:', error);
     interaction.reply({
@@ -155,3 +96,4 @@ async function startMatch(interaction, queue, teams, saveQueue, loadMatches, sav
     });
   }
 }
+

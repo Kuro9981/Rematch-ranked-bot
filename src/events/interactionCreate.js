@@ -1,5 +1,5 @@
 const { PermissionFlagsBits, EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, ChannelType } = require('discord.js');
-const { loadTeams, loadQueue, saveQueue, loadMatches, saveMatches, saveTeams } = require('../utils/database');
+const { loadTeams, loadQueue, saveQueue, loadMatches, saveMatches, saveTeams, loadAutoQueue, saveAutoQueue, loadQueueConfig, saveQueueConfig } = require('../utils/database');
 const { calculateMMRChange } = require('../utils/mmr');
 
 // Store temporaneo per i dati dei match durante il voto
@@ -108,6 +108,160 @@ module.exports = {
               ephemeral: true 
             });
           }
+        } else if (customId === 'autojoinqueue_join') {
+          // Handle auto-join queue button
+          const guildId = interaction.guildId;
+          const autoQueue = await loadAutoQueue(guildId);
+
+          // Find team of captain
+          let userTeam = null;
+          for (const [teamName, teamData] of Object.entries(teams)) {
+            if (teamData.captain === interaction.user.id) {
+              userTeam = { name: teamName, ...teamData };
+              break;
+            }
+          }
+
+          if (!userTeam) {
+            return await interaction.reply({
+              content: '❌ You must be a team captain to join the queue!',
+              ephemeral: true,
+            });
+          }
+
+          // Check if team already in queue
+          if (autoQueue.some((q) => q.teamName === userTeam.name)) {
+            return await interaction.reply({
+              content: `❌ **${userTeam.name}** is already in queue!`,
+              ephemeral: true,
+            });
+          }
+
+          // Add to queue
+          autoQueue.push({
+            teamName: userTeam.name,
+            captainId: interaction.user.id,
+            mmr: userTeam.mmr,
+            addedAt: Date.now(),
+            waitTime: 0,
+          });
+
+          await saveAutoQueue(guildId, autoQueue);
+
+          return await interaction.reply({
+            content: `✅ **${userTeam.name}** joined the queue!\n\n📊 Current MMR: ${userTeam.mmr}\n⏳ Finding opponents...`,
+            ephemeral: true,
+          });
+
+        } else if (customId === 'autojoinqueue_leave') {
+          // Handle auto-leave queue button
+          const guildId = interaction.guildId;
+          const autoQueue = await loadAutoQueue(guildId);
+
+          // Find team of captain
+          let userTeam = null;
+          for (const [teamName, teamData] of Object.entries(teams)) {
+            if (teamData.captain === interaction.user.id) {
+              userTeam = { name: teamName, ...teamData };
+              break;
+            }
+          }
+
+          if (!userTeam) {
+            return await interaction.reply({
+              content: '❌ You must be a team captain!',
+              ephemeral: true,
+            });
+          }
+
+          // Remove from queue
+          const index = autoQueue.findIndex((q) => q.teamName === userTeam.name);
+          if (index > -1) {
+            autoQueue.splice(index, 1);
+            await saveAutoQueue(guildId, autoQueue);
+
+            return await interaction.reply({
+              content: `✅ **${userTeam.name}** left the queue!`,
+              ephemeral: true,
+            });
+          } else {
+            return await interaction.reply({
+              content: `❌ **${userTeam.name}** is not in the queue!`,
+              ephemeral: true,
+            });
+          }
+        } else if (customId === 'autojoinqueue_close') {
+          // Handle close queue button (admin only)
+          const guildId = interaction.guildId;
+
+          // Check if user is admin
+          if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return await interaction.reply({
+              content: '❌ Only administrators can close the queue!',
+              ephemeral: true,
+            });
+          }
+
+          // Load queue config
+          const queueConfig = await loadQueueConfig(guildId);
+
+          // Check if queue is already closed
+          if (!queueConfig.enabled) {
+            return await interaction.reply({
+              content: '❌ The queue is already closed!',
+              ephemeral: true,
+            });
+          }
+
+          // Disable queue and clear teams
+          queueConfig.enabled = false;
+          await saveQueueConfig(guildId, queueConfig);
+          await saveAutoQueue(guildId, []); // Clear queue
+
+          // Update the queue message to show it's closed
+          try {
+            const channel = interaction.guild.channels.cache.get(queueConfig.queueChannelId);
+            if (channel && queueConfig.queueMessageId) {
+              const message = await channel.messages.fetch(queueConfig.queueMessageId).catch(() => null);
+              if (message) {
+                await message.edit({
+                  embeds: [
+                    {
+                      title: '📋 Match Queue',
+                      description: 'Queue is **CLOSED** ❌',
+                      color: 0xff0000,
+                      fields: [
+                        {
+                          name: '⏳ Status',
+                          value: 'Queue is currently closed',
+                          inline: false,
+                        },
+                        {
+                          name: '👥 Teams in Queue',
+                          value: '0',
+                          inline: true,
+                        },
+                        {
+                          name: '📊 Range (MMR)',
+                          value: '±100',
+                          inline: true,
+                        },
+                      ],
+                      timestamp: new Date(),
+                    },
+                  ],
+                  components: [],
+                });
+              }
+            }
+          } catch (error) {
+            console.error('Error updating queue message:', error);
+          }
+
+          return await interaction.reply({
+            content: `🔒 Queue has been **closed** by an administrator!`,
+            ephemeral: true,
+          });
         }
       }
     } catch (error) {
