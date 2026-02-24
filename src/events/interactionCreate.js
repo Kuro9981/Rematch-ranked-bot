@@ -559,6 +559,18 @@ async function handleVote(interaction) {
         await matchChannel.send({ embeds: [resultEmbed] });
         console.log('[VOTE] Result embed sent to match channel');
         
+        // Send result to results channel if configured
+        const queueConfig = await loadQueueConfig(interaction.guildId);
+        if (queueConfig.resultsChannelId) {
+          try {
+            const resultsChannel = await interaction.guild.channels.fetch(queueConfig.resultsChannelId);
+            await resultsChannel.send({ embeds: [resultEmbed] });
+            console.log('[VOTE] Result embed sent to results channel');
+          } catch (error) {
+            console.error('[VOTE] Error sending to results channel:', error);
+          }
+        }
+        
         // Delete match channel after 3 seconds to allow users to see the result
         setTimeout(async () => {
           try {
@@ -610,6 +622,18 @@ async function handleVote(interaction) {
         
         await matchChannel.send({ embeds: [drawEmbed], components: [voteRow] });
         console.log('[VOTE] Restarted voting with new buttons');
+        
+        // Send draw notification to results channel if configured
+        const queueConfig = await loadQueueConfig(interaction.guildId);
+        if (queueConfig.resultsChannelId) {
+          try {
+            const resultsChannel = await interaction.guild.channels.fetch(queueConfig.resultsChannelId);
+            await resultsChannel.send({ embeds: [drawEmbed] });
+            console.log('[VOTE] Draw notification sent to results channel');
+          } catch (error) {
+            console.error('[VOTE] Error sending draw to results channel:', error);
+          }
+        }
       }
     }
   } catch (error) {

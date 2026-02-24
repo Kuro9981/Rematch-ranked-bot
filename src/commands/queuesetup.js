@@ -12,16 +12,25 @@ module.exports = {
         .addChannelTypes(ChannelType.GuildText)
         .setRequired(true)
     )
+    .addChannelOption((option) =>
+      option
+        .setName('results')
+        .setDescription('Channel where match results will be posted')
+        .addChannelTypes(ChannelType.GuildText)
+        .setRequired(false)
+    )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
     const channel = interaction.options.getChannel('channel');
+    const resultsChannel = interaction.options.getChannel('results');
     const guildId = interaction.guildId;
 
     try {
       // Save queue configuration
       const config = await loadQueueConfig(guildId);
       config.queueChannelId = channel.id;
+      config.resultsChannelId = resultsChannel ? resultsChannel.id : null; // Optional results channel
       config.enabled = true;
       config.startedAt = Date.now(); // Track when queue started for uptime
       await saveQueueConfig(guildId, config);
@@ -81,8 +90,16 @@ module.exports = {
       config.queueMessageId = queueMessage.id;
       await saveQueueConfig(guildId, config);
 
+      let responseText = `✅ Queue channel set to <#${channel.id}>!`;
+      if (resultsChannel) {
+        responseText += `\n✅ Results channel set to <#${resultsChannel.id}>!`;
+      } else {
+        responseText += `\n⚠️ No results channel configured (optional)`;
+      }
+      responseText += `\n\nClick the buttons on the queue message to join or leave the automatic queue.`;
+
       return interaction.reply({
-        content: `✅ Queue channel set to <#${channel.id}>!\n\nClick the buttons on the queue message to join or leave the automatic queue.`,
+        content: responseText,
         ephemeral: true,
       });
     } catch (error) {
