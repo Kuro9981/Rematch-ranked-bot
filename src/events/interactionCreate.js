@@ -42,6 +42,13 @@ module.exports = {
         const teams = await loadTeams();
         const queue = await loadQueue();
 
+        // Match win buttons for auto-matched games
+        if (customId.startsWith('match_win_')) {
+          console.log('[MATCH_WIN] Button clicked with customId:', customId);
+          await handleMatchWin(interaction, client);
+          return;
+        }
+
         // Vote buttons for winner
         if (customId.startsWith('vote_')) {
           console.log('[VOTE] Button clicked with customId:', customId);
@@ -621,6 +628,133 @@ async function handleVote(interaction) {
     console.error('[VOTE] Stack:', error.stack);
     await interaction.editReply({
       content: '❌ Error during voting!\n```' + error.message + '```',
+      ephemeral: true,
+    });
+  }
+}
+// Function to handle match win buttons
+async function handleMatchWin(interaction) {
+  try {
+    await interaction.deferReply({ ephemeral: true });
+
+    const customId = interaction.customId;
+    console.log('[MATCH_WIN] Custom ID received:', customId);
+    
+    // Parse customId: match_win_MATCHID_TEAMNAME
+    const parts = customId.split('_');
+    const matchId = parts[2];
+    const winningTeamName = parts.slice(3).join('_');
+    
+    console.log('[MATCH_WIN] Parsed matchId:', matchId, '| Winning team:', winningTeamName);
+
+    // Load match data
+    const matches = await loadMatches();
+    const match = matches.find(m => m.id === matchId && m.status === 'active');
+
+    if (!match) {
+      return await interaction.editReply({
+        content: '❌ Match not found or already completed!',
+        ephemeral: true,
+      });
+    }
+
+    // Check if user is a captain in this match
+    const isCaptain = match.team1Captain === interaction.user.id || match.team2Captain === interaction.user.id;
+    if (!isCaptain) {
+      return await interaction.editReply({
+        content: '❌ Only team captains can report the winner!',
+        ephemeral: true,
+      });
+    }
+
+    // Add confirmation
+    if (!match.confirmations.includes(interaction.user.id)) {
+      match.confirmations.push(interaction.user.id);
+    }
+
+    match.winner = winningTeamName;
+    
+    console.log('[MATCH_WIN] Confirmations:', match.confirmations.length, '| Winner:', match.winner);
+
+    // If both captains confirmed
+    if (match.confirmations.length === 2) {
+      console.log('[MATCH_WIN] Both captains confirmed! Processing match result...');
+      
+      const teams = await loadTeams();
+      const winnerTeam = Object.values(teams).find(t => t.name === match.winner);
+      const loserTeam = match.winner === match.team1 
+        ? Object.values(teams).find(t => t.name === match.team2)
+        : Object.values(teams).find(t => t.name === match.team1);
+
+      if (!winnerTeam || !loserTeam) {
+        return await interaction.editReply({
+          content: '❌ Error: Could not find team data!',
+          ephemeral: true,
+        });
+      }
+
+      // Calculate MMR changes
+      const { winnerChange, loserChange } = calculateMMRChange(winnerTeam.mmr, loserTeam.mmr);
+
+      // Update team data
+      winnerTeam.mmr += winnerChange;
+      loserTeam.mmr = Math.max(0, loserTeam.mmr + loserChange);
+      winnerTeam.wins++;
+      loserTeam.losses++;
+
+      console.log('[MATCH_WIN] MMR changes - Winner:', winnerChange, '| Loser:', loserChange);
+
+      // Mark match as completed
+      match.status = 'completed';
+      match.completedAt = new Date().toISOString();
+
+      await saveTeams(teams);
+      await saveMatches(matches);
+
+      console.log('[MATCH_WIN] Match marked as completed, data saved');
+
+      // Send result message in match channel
+      const guild = interaction.guild;
+      const channel = await guild.channels.fetch(match.channelId);
+
+      const resultEmbed = new EmbedBuilder()
+        .setColor('#00FF00')
+        .setTitle('🏆 MATCH COMPLETED!')
+        .addFields(
+          { name: '👑 Winner', value: winnerTeam.name, inline: false },
+          { name: `📊 ${winnerTeam.name}`, value: `MMR: **${winnerTeam.mmr}** (${winnerChange > 0 ? '+' : ''}${winnerChange})`, inline: true },
+          { name: `📊 ${loserTeam.name}`, value: `MMR: **${loserTeam.mmr}** (${loserChange})`, inline: true }
+        )
+        .setTimestamp();
+
+      await channel.send({ embeds: [resultEmbed] });
+
+      // Delete match channel after 3 seconds
+      setTimeout(async () => {
+        try {
+          await channel.delete();
+          console.log('[MATCH_WIN] Match channel deleted');
+        } catch (error) {
+          console.error('[MATCH_WIN] Error deleting match channel:', error);
+        }
+      }, 3000);
+
+      return await interaction.editReply({
+        content: `✅ Match result recorded!\n\n👑 **${winnerTeam.name}** won!\n\n📊 **${winnerTeam.name}**: ${winnerChange > 0 ? '+' : ''}${winnerChange} MMR\n📊 **${loserTeam.name}**: ${loserChange} MMR`,
+        ephemeral: true,
+      });
+    } else {
+      const remainingCaptain = match.team1Captain === interaction.user.id ? match.team2Captain : match.team1Captain;
+      return await interaction.editReply({
+        content: `✅ You voted for **${winningTeamName}** to win!\n\n⏳ Waiting for the other captain to confirm...`,
+        ephemeral: true,
+      });
+    }
+  } catch (error) {
+    console.error('[MATCH_WIN] Error in match win:', error);
+    console.error('[MATCH_WIN] Stack:', error.stack);
+    await interaction.editReply({
+      content: '❌ Error processing match result!\n```' + error.message + '```',
       ephemeral: true,
     });
   }

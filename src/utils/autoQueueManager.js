@@ -85,17 +85,20 @@ function stopQueuePolling(guildId) {
  */
 async function createAutoMatch(guild, team1, team2, queueConfig, client) {
   try {
-    // Create match channel and match data
-    const { matchChannel, match } = await createMatchChannel(guild, team1, team2, true);
+    // Get queue channel to extract category
+    const queueChannel = guild.channels.cache.get(queueConfig.queueChannelId);
+    const categoryId = queueChannel?.parent?.id || null;
 
-    // Send match info to channel with auto-matched tag
-    await sendMatchInfo(matchChannel, team1, team2, true);
+    // Create match channel and match data
+    const { matchChannel, match } = await createMatchChannel(guild, team1, team2, true, categoryId);
+
+    // Send match info to channel with auto-matched tag and buttons
+    await sendMatchInfo(matchChannel, team1, team2, true, match, client);
 
     // Notify captains via DM
     await notifyCaptains(client, team1, team2, matchChannel.id);
 
     // Notify in queue channel
-    const queueChannel = guild.channels.cache.get(queueConfig.queueChannelId);
     if (queueChannel) {
       await queueChannel.send({
         embeds: [
