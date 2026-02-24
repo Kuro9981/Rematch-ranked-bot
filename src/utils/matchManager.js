@@ -71,65 +71,75 @@ async function createMatchChannel(guild, team1, team2, autoMatched = false, cate
 }
 
 /**
- * Send match info to the match channel with win/loss buttons
+ * Send match info to the match channel with voting buttons (aligned with setup)
  * @param {Channel} matchChannel - The match channel
  * @param {Object} team1 - First team object
  * @param {Object} team2 - Second team object
  * @param {Boolean} isAutoMatched - Whether this is an auto-matched game
  * @param {Object} match - Match data object
- * @param {Client} client - Discord client (optional, for auto-matched games)
+ * @param {Object} voteData - Vote data for memory storage
  */
-async function sendMatchInfo(matchChannel, team1, team2, isAutoMatched = false, match = null, client = null) {
+async function sendMatchInfo(matchChannel, team1, team2, isAutoMatched = false, match = null, voteData = null) {
   try {
     const mmrDiff = Math.abs(team1.mmr - team2.mmr);
-    let autoTag, description;
+    let autoTag = '';
     
     if (isAutoMatched) {
       autoTag = '🤖 **AUTO-MATCHED!**\n\n';
-    } else {
-      autoTag = '🎮 **MATCH START!**\n\n';
     }
     
-    description = `${autoTag}🔵 **${team1.teamName}** (${team1.mmr} MMR) vs 🔴 **${team2.teamName}** (${team2.mmr} MMR)`;
+    const matchInfo = `${autoTag}🔵 **${team1.teamName}** (${team1.mmr} MMR) vs 🔴 **${team2.teamName}** (${team2.mmr} MMR)`;
 
-    // Create win/loss buttons if match object is provided
+    // Create voting buttons if match object is provided (same as setup)
     let components = [];
-    if (match) {
+    if (match && voteData) {
       const matchId = match.id;
-      const team1Button = new ButtonBuilder()
-        .setCustomId(`match_win_${matchId}_${team1.teamName}`)
-        .setLabel(`✅ ${team1.teamName} Won`)
-        .setStyle(ButtonStyle.Success);
+      const team1Name = team1.teamName;
+      const team2Name = team2.teamName;
+
+      const voteTeam1Button = new ButtonBuilder()
+        .setCustomId(`vote_${matchId}_${team1Name}`)
+        .setLabel(`🔵 Vote ${team1Name}`)
+        .setStyle(ButtonStyle.Primary);
       
-      const team2Button = new ButtonBuilder()
-        .setCustomId(`match_win_${matchId}_${team2.teamName}`)
-        .setLabel(`✅ ${team2.teamName} Won`)
-        .setStyle(ButtonStyle.Success);
+      const voteTeam2Button = new ButtonBuilder()
+        .setCustomId(`vote_${matchId}_${team2Name}`)
+        .setLabel(`🔴 Vote ${team2Name}`)
+        .setStyle(ButtonStyle.Danger);
       
-      components = [new ActionRowBuilder().addComponents(team1Button, team2Button)];
+      components = [new ActionRowBuilder().addComponents(voteTeam1Button, voteTeam2Button)];
     }
 
     await matchChannel.send({
       embeds: [
         {
-          title: '⚔️ Match Started',
-          description: description,
+          title: '⚔️ MATCH IN PROGRESS!',
+          description: matchInfo,
           fields: [
+            {
+              name: team1.teamName,
+              value: `📊 MMR: ${team1.mmr}`,
+              inline: true,
+            },
+            {
+              name: team2.teamName,
+              value: `📊 MMR: ${team2.mmr}`,
+              inline: true,
+            },
+            {
+              name: '🗳️ Winner Vote',
+              value: 'Click the button of the winning team!\n(Both captains must vote)',
+              inline: false,
+            },
             {
               name: '📊 MMR Difference',
               value: `${mmrDiff} points`,
               inline: false,
             },
-            {
-              name: '💬 Instructions',
-              value: match 
-                ? 'Click the button below to report the winning team. Both captains must confirm.'
-                : 'Both captains must use `/win` command to confirm the winner and finalize the match results.',
-              inline: false,
-            },
           ],
-          color: 0xff0000,
+          color: 0xFFA500,
           timestamp: new Date(),
+          footer: { text: `Match ID: ${match?.id}` },
         },
       ],
       components: components,

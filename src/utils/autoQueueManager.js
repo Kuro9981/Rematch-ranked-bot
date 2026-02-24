@@ -7,6 +7,7 @@ const {
 const { findAllMatches, getQueueStatus } = require('../utils/queueMatcher');
 const { createMatchChannel, sendMatchInfo, notifyCaptains } = require('../utils/matchManager');
 const { ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
+const { addMatch } = require('./activeMatches');
 
 // Store polling intervals per guild
 const pollingIntervals = new Map();
@@ -92,8 +93,23 @@ async function createAutoMatch(guild, team1, team2, queueConfig, client) {
     // Create match channel and match data
     const { matchChannel, match } = await createMatchChannel(guild, team1, team2, true, categoryId);
 
-    // Send match info to channel with auto-matched tag and buttons
-    await sendMatchInfo(matchChannel, team1, team2, true, match, client);
+    // Create vote data for memory storage (same format as setup voting)
+    const voteData = {
+      matchId: match.id,
+      team1: team1.teamName,
+      team2: team2.teamName,
+      channelId: matchChannel.id,
+      messageId: null, // Will be set when message is sent
+      votes: {},
+      createdAt: new Date().toISOString(),
+    };
+
+    // Save to active matches
+    addMatch(match.id, voteData);
+    console.log('[AUTO_MATCH] Vote data saved for matchId:', match.id);
+
+    // Send match info to channel with voting buttons and vote data
+    await sendMatchInfo(matchChannel, team1, team2, true, match, voteData);
 
     // Notify captains via DM
     await notifyCaptains(client, team1, team2, matchChannel.id);

@@ -1,9 +1,7 @@
 const { PermissionFlagsBits, EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, ChannelType } = require('discord.js');
 const { loadTeams, loadQueue, saveQueue, loadMatches, saveMatches, saveTeams, loadAutoQueue, saveAutoQueue, loadQueueConfig, saveQueueConfig } = require('../utils/database');
 const { calculateMMRChange } = require('../utils/mmr');
-
-// Store temporaneo per i dati dei match durante il voto
-const activeMatches = new Map();
+const { getMatch, updateMatch, removeMatch, getAllMatches } = require('../utils/activeMatches');
 
 module.exports = {
   name: 'interactionCreate',
@@ -42,14 +40,7 @@ module.exports = {
         const teams = await loadTeams();
         const queue = await loadQueue();
 
-        // Match win buttons for auto-matched games
-        if (customId.startsWith('match_win_')) {
-          console.log('[MATCH_WIN] Button clicked with customId:', customId);
-          await handleMatchWin(interaction, client);
-          return;
-        }
-
-        // Vote buttons for winner
+        // Vote buttons for winner (handles both setup and auto-queue)
         if (customId.startsWith('vote_')) {
           console.log('[VOTE] Button clicked with customId:', customId);
           await handleVote(interaction);
@@ -381,7 +372,7 @@ async function startMatch(interaction, queue, teams) {
     
     // Save voting status
     const voteData = {
-      matchId,
+      matchId: matchId,
       team1: queue[0],
       team2: queue[1],
       channelId: matchChannel.id,
@@ -390,12 +381,11 @@ async function startMatch(interaction, queue, teams) {
       createdAt: new Date().toISOString(),
     };
     
-    // Save voting status in memory
-    activeMatches.set(matchId, voteData);
+    // Save voting status in memory using the shared module
+    addMatch(matchId, voteData);
     
     console.log('[MATCH] Vote data saved for matchId:', matchId);
-    console.log('[MATCH] Active matches count:', activeMatches.size);
-    console.log('[MATCH] All active match IDs:', Array.from(activeMatches.keys()));
+    console.log('[MATCH] All active match IDs:', getAllMatches());
     console.log('[MATCH] Vote data:', JSON.stringify(voteData, null, 2));
     
     // Notify in queue channel
@@ -420,38 +410,39 @@ async function startMatch(interaction, queue, teams) {
   }
 }
 
-// Function to handle votes
+// Function to handle votes (unified for setup and auto-queue)
 async function handleVote(interaction) {
   try {
     await interaction.deferReply({ ephemeral: true });
     
     const customId = interaction.customId;
     console.log('[VOTE] Custom ID received:', customId);
-    console.log('[VOTE] Active matches in memory:', Array.from(activeMatches.keys()));
+    console.log('[VOTE] Active matches in memory:', getAllMatches());
     
-    // Parse customId correctly: vote_match_TIMESTAMP_TEAMID
-    const match = customId.match(/^vote_(.+)_([a-zA-Z0-9]+)$/);
-    if (!match) {
+    // Parse customId: vote_MATCHID_VOTEDTEAM
+    // Format: vote_match_TIMESTAMP_TEAMNAME
+    const parts = customId.split('_');
+    if (parts.length < 3) {
       console.error('[VOTE] Failed to parse customId:', customId);
       return await interaction.editReply({
         content: '❌ Invalid vote format!',
         ephemeral: true,
       });
     }
-    
-    const matchId = match[1];
-    const votedTeamId = match[2];
+
+    const matchId = parts.slice(1, -1).join('_'); // Handle team names with spaces
+    const votedTeam = parts[parts.length - 1]; // Last part is the team name/id
     
     console.log('[VOTE] Parsed matchId:', matchId);
-    console.log('[VOTE] Parsed votedTeamId:', votedTeamId);
+    console.log('[VOTE] Parsed votedTeam:', votedTeam);
     
-    // Load vote data
-    const voteData = activeMatches.get(matchId);
+    // Load vote data from active matches
+    const voteData = getMatch(matchId);
     
     if (!voteData) {
       console.error('[VOTE] Match data NOT found!');
       console.error('[VOTE] Looking for:', matchId);
-      console.error('[VOTE] Available matches:', Array.from(activeMatches.keys()).join(', '));
+      console.error('[VOTE] Available matches:', getAllMatches().join(', '));
       return await interaction.editReply({
         content: '❌ Match not found for this vote!',
         ephemeral: true,
@@ -480,14 +471,14 @@ async function handleVote(interaction) {
     
     // Register vote
     console.log('[VOTE] User team ID:', userTeamId);
-    console.log('[VOTE] Voted for team ID:', votedTeamId);
-    voteData.votes[userTeamId] = votedTeamId;
-    activeMatches.set(matchId, voteData);
+    console.log('[VOTE] Voted for team:', votedTeam);
+    voteData.votes[userTeamId] = votedTeam;
+    updateMatch(matchId, voteData);
     
     console.log('[VOTE] Current votes:', voteData.votes);
     console.log('[VOTE] Votes count:', Object.keys(voteData.votes).length);
     
-    const votedTeamName = teams[votedTeamId].name;
+    const votedTeamName = votedTeam;
     await interaction.editReply({
       content: `✅ You voted for **${votedTeamName}**!`,
       ephemeral: true,
@@ -513,12 +504,12 @@ async function handleVote(interaction) {
       
       // Update winner team
       if (winner) {
-        console.log('[VOTE] Winner team ID:', winner);
+        console.log('[VOTE] Winner team:', winner);
         const updatedTeams = await loadTeams();
-        const winnerTeam = updatedTeams[winner];
-        const loserTeamId = winner === voteData.team1 ? voteData.team2 : voteData.team1;
-        console.log('[VOTE] Winner:', winnerTeam.name, '| Loser:', updatedTeams[loserTeamId].name);
-        const loserTeam = updatedTeams[loserTeamId];
+        const winnerTeam = updatedTeams[voteData.team1 === winner ? voteData.team1 : voteData.team2];
+        const loserTeam = updatedTeams[voteData.team1 === winner ? voteData.team2 : voteData.team1];
+        
+        console.log('[VOTE] Winner:', winnerTeam.name, '| Loser:', loserTeam.name);
         
         // Update team data
         winnerTeam.wins++;
@@ -535,9 +526,9 @@ async function handleVote(interaction) {
         matches.push({
           id: matchId,
           team1: voteData.team1,
-          team1Name: winnerTeam === updatedTeams[voteData.team1] ? updatedTeams[voteData.team1].name : updatedTeams[voteData.team2].name,
+          team1Name: voteData.team1,
           team2: voteData.team2,
-          team2Name: loserTeam === updatedTeams[voteData.team2] ? updatedTeams[voteData.team2].name : updatedTeams[voteData.team1].name,
+          team2Name: voteData.team2,
           winner: winner,
           winnerName: winnerTeam.name,
           loserName: loserTeam.name,
@@ -579,37 +570,35 @@ async function handleVote(interaction) {
         }, 3000);
         
         // Delete vote data from memory
-        activeMatches.delete(matchId);
+        removeMatch(matchId);
         console.log('[VOTE] Match data deleted for matchId:', matchId);
-        console.log('[VOTE] Remaining active matches:', Array.from(activeMatches.keys()));
+        console.log('[VOTE] Remaining active matches:', getAllMatches());
       } else {
         // Draw - teams voted for different teams, restart voting
         console.log('[VOTE] It\'s a draw! Teams voted for different winners. Restarting voting...');
         
         const matchChannel = await interaction.guild.channels.fetch(voteData.channelId);
         const updatedTeams = await loadTeams();
-        const team1 = updatedTeams[voteData.team1];
-        const team2 = updatedTeams[voteData.team2];
         
         // Send draw message
         const drawEmbed = new EmbedBuilder()
           .setColor('#FFD700')
           .setTitle('⚖️ It\'s a Draw!')
-          .setDescription(`${team1.name} and ${team2.name} voted for different teams!\n\n**Please vote again:**`)
+          .setDescription(`${voteData.team1} and ${voteData.team2} voted for different teams!\n\n**Please vote again:**`)
           .addFields(
-            { name: team1.name, value: `👥 Players: ${team1.members.length}\n📊 MMR: ${team1.mmr}`, inline: true },
-            { name: team2.name, value: `👥 Players: ${team2.members.length}\n📊 MMR: ${team2.mmr}`, inline: true }
+            { name: voteData.team1, value: `📊 MMR: ${updatedTeams[voteData.team1].mmr}`, inline: true },
+            { name: voteData.team2, value: `📊 MMR: ${updatedTeams[voteData.team2].mmr}`, inline: true }
           );
         
         // Create new voting buttons
         const voteTeam1Button = new ButtonBuilder()
           .setCustomId(`vote_${matchId}_${voteData.team1}`)
-          .setLabel(`🔵 Vote ${team1.name}`)
+          .setLabel(`🔵 Vote ${voteData.team1}`)
           .setStyle(ButtonStyle.Primary);
         
         const voteTeam2Button = new ButtonBuilder()
           .setCustomId(`vote_${matchId}_${voteData.team2}`)
-          .setLabel(`🔴 Vote ${team2.name}`)
+          .setLabel(`🔴 Vote ${voteData.team2}`)
           .setStyle(ButtonStyle.Danger);
         
         const voteRow = new ActionRowBuilder()
@@ -617,7 +606,7 @@ async function handleVote(interaction) {
         
         // Reset votes and save
         voteData.votes = {};
-        activeMatches.set(matchId, voteData);
+        updateMatch(matchId, voteData);
         
         await matchChannel.send({ embeds: [drawEmbed], components: [voteRow] });
         console.log('[VOTE] Restarted voting with new buttons');
@@ -631,131 +620,4 @@ async function handleVote(interaction) {
       ephemeral: true,
     });
   }
-}
-// Function to handle match win buttons
-async function handleMatchWin(interaction) {
-  try {
-    await interaction.deferReply({ ephemeral: true });
-
-    const customId = interaction.customId;
-    console.log('[MATCH_WIN] Custom ID received:', customId);
-    
-    // Parse customId: match_win_MATCHID_TEAMNAME
-    const parts = customId.split('_');
-    const matchId = parts[2];
-    const winningTeamName = parts.slice(3).join('_');
-    
-    console.log('[MATCH_WIN] Parsed matchId:', matchId, '| Winning team:', winningTeamName);
-
-    // Load match data
-    const matches = await loadMatches();
-    const match = matches.find(m => m.id === matchId && m.status === 'active');
-
-    if (!match) {
-      return await interaction.editReply({
-        content: '❌ Match not found or already completed!',
-        ephemeral: true,
-      });
-    }
-
-    // Check if user is a captain in this match
-    const isCaptain = match.team1Captain === interaction.user.id || match.team2Captain === interaction.user.id;
-    if (!isCaptain) {
-      return await interaction.editReply({
-        content: '❌ Only team captains can report the winner!',
-        ephemeral: true,
-      });
-    }
-
-    // Add confirmation
-    if (!match.confirmations.includes(interaction.user.id)) {
-      match.confirmations.push(interaction.user.id);
-    }
-
-    match.winner = winningTeamName;
-    
-    console.log('[MATCH_WIN] Confirmations:', match.confirmations.length, '| Winner:', match.winner);
-
-    // If both captains confirmed
-    if (match.confirmations.length === 2) {
-      console.log('[MATCH_WIN] Both captains confirmed! Processing match result...');
-      
-      const teams = await loadTeams();
-      const winnerTeam = Object.values(teams).find(t => t.name === match.winner);
-      const loserTeam = match.winner === match.team1 
-        ? Object.values(teams).find(t => t.name === match.team2)
-        : Object.values(teams).find(t => t.name === match.team1);
-
-      if (!winnerTeam || !loserTeam) {
-        return await interaction.editReply({
-          content: '❌ Error: Could not find team data!',
-          ephemeral: true,
-        });
-      }
-
-      // Calculate MMR changes
-      const { winnerChange, loserChange } = calculateMMRChange(winnerTeam.mmr, loserTeam.mmr);
-
-      // Update team data
-      winnerTeam.mmr += winnerChange;
-      loserTeam.mmr = Math.max(0, loserTeam.mmr + loserChange);
-      winnerTeam.wins++;
-      loserTeam.losses++;
-
-      console.log('[MATCH_WIN] MMR changes - Winner:', winnerChange, '| Loser:', loserChange);
-
-      // Mark match as completed
-      match.status = 'completed';
-      match.completedAt = new Date().toISOString();
-
-      await saveTeams(teams);
-      await saveMatches(matches);
-
-      console.log('[MATCH_WIN] Match marked as completed, data saved');
-
-      // Send result message in match channel
-      const guild = interaction.guild;
-      const channel = await guild.channels.fetch(match.channelId);
-
-      const resultEmbed = new EmbedBuilder()
-        .setColor('#00FF00')
-        .setTitle('🏆 MATCH COMPLETED!')
-        .addFields(
-          { name: '👑 Winner', value: winnerTeam.name, inline: false },
-          { name: `📊 ${winnerTeam.name}`, value: `MMR: **${winnerTeam.mmr}** (${winnerChange > 0 ? '+' : ''}${winnerChange})`, inline: true },
-          { name: `📊 ${loserTeam.name}`, value: `MMR: **${loserTeam.mmr}** (${loserChange})`, inline: true }
-        )
-        .setTimestamp();
-
-      await channel.send({ embeds: [resultEmbed] });
-
-      // Delete match channel after 3 seconds
-      setTimeout(async () => {
-        try {
-          await channel.delete();
-          console.log('[MATCH_WIN] Match channel deleted');
-        } catch (error) {
-          console.error('[MATCH_WIN] Error deleting match channel:', error);
-        }
-      }, 3000);
-
-      return await interaction.editReply({
-        content: `✅ Match result recorded!\n\n👑 **${winnerTeam.name}** won!\n\n📊 **${winnerTeam.name}**: ${winnerChange > 0 ? '+' : ''}${winnerChange} MMR\n📊 **${loserTeam.name}**: ${loserChange} MMR`,
-        ephemeral: true,
-      });
-    } else {
-      const remainingCaptain = match.team1Captain === interaction.user.id ? match.team2Captain : match.team1Captain;
-      return await interaction.editReply({
-        content: `✅ You voted for **${winningTeamName}** to win!\n\n⏳ Waiting for the other captain to confirm...`,
-        ephemeral: true,
-      });
-    }
-  } catch (error) {
-    console.error('[MATCH_WIN] Error in match win:', error);
-    console.error('[MATCH_WIN] Stack:', error.stack);
-    await interaction.editReply({
-      content: '❌ Error processing match result!\n```' + error.message + '```',
-      ephemeral: true,
-    });
-  }
-}
+};
