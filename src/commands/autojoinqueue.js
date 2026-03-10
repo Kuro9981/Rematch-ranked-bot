@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { loadTeams, loadAutoQueue, saveAutoQueue, loadQueueConfig } = require('../utils/database');
+const { loadTeams, loadAutoQueue, saveAutoQueue, loadQueueConfig, loadMatches } = require('../utils/database');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -53,6 +53,19 @@ module.exports = {
     if (autoQueue.some((q) => q.teamName === teamName)) {
       return interaction.reply({
         content: `❌ **${teamName}** is already in queue!`,
+        ephemeral: true,
+      });
+    }
+
+    // Check if team has an active match
+    const matches = await loadMatches();
+    const activeMatch = matches.find(
+      (m) => (m.team1 === teamName || m.team2 === teamName) && m.status === 'active'
+    );
+
+    if (activeMatch) {
+      return interaction.reply({
+        content: `❌ **${teamName}** is currently in an active match! Finish the match before joining the queue.`,
         ephemeral: true,
       });
     }

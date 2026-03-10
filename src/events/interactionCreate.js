@@ -135,6 +135,19 @@ module.exports = {
             });
           }
 
+          // Check if team has an active match
+          const matches = await loadMatches();
+          const activeMatch = matches.find(
+            (m) => (m.team1 === userTeam.name || m.team2 === userTeam.name) && m.status === 'active'
+          );
+
+          if (activeMatch) {
+            return await interaction.reply({
+              content: `❌ **${userTeam.name}** is currently in an active match! Finish the match before joining the queue.`,
+              ephemeral: true,
+            });
+          }
+
           // Add to queue
           autoQueue.push({
             teamName: userTeam.name,
@@ -622,18 +635,6 @@ async function handleVote(interaction) {
         
         await matchChannel.send({ embeds: [drawEmbed], components: [voteRow] });
         console.log('[VOTE] Restarted voting with new buttons');
-        
-        // Send draw notification to results channel if configured
-        const queueConfig = await loadQueueConfig(interaction.guildId);
-        if (queueConfig.resultsChannelId) {
-          try {
-            const resultsChannel = await interaction.guild.channels.fetch(queueConfig.resultsChannelId);
-            await resultsChannel.send({ embeds: [drawEmbed] });
-            console.log('[VOTE] Draw notification sent to results channel');
-          } catch (error) {
-            console.error('[VOTE] Error sending draw to results channel:', error);
-          }
-        }
       }
     }
   } catch (error) {
