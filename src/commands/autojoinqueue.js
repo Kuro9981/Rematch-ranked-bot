@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { loadTeams, loadAutoQueue, saveAutoQueue, loadQueueConfig, loadMatches } = require('../utils/database');
+const { loadTeams, loadAutoQueue, saveAutoQueue, loadQueueConfig, loadMatches, saveMatches } = require('../utils/database');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -64,10 +64,29 @@ module.exports = {
     );
 
     if (activeMatch) {
-      return interaction.reply({
-        content: `❌ **${teamName}** is currently in an active match! Finish the match before joining the queue.`,
-        ephemeral: true,
-      });
+      // Verify that the match channel still exists
+      try {
+        const guild = interaction.guild;
+        const matchChannel = await guild.channels.fetch(activeMatch.channelId).catch(() => null);
+        
+        // If the channel was deleted, the match is effectively closed
+        if (!matchChannel) {
+          // Update match status to completed since its channel is gone
+          activeMatch.status = 'completed';
+          activeMatch.completedAt = new Date().toISOString();
+          await saveMatches(matches);
+          console.log(`[AUTOJOINQUEUE] Match ${activeMatch.id} marked as completed (channel was deleted)`);
+        } else {
+          // Channel still exists, match is truly active
+          return interaction.reply({
+            content: `❌ **${teamName}** is currently in an active match! Finish the match before joining the queue.`,
+            ephemeral: true,
+          });
+        }
+      } catch (error) {
+        console.error('Error checking match channel:', error);
+        // If there's an error, allow the team to join anyway as a fail-safe
+      }
     }
 
     // Add to queue - use captain ID or current user ID

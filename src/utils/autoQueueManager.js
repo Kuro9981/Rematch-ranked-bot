@@ -53,10 +53,10 @@ async function startQueuePolling(client, guildId) {
 
         const newQueue = queue.filter((t) => !matchedTeams.has(t.teamName));
         await saveAutoQueue(guildId, newQueue);
-      }
 
-      // Update queue display
-      await updateQueueDisplay(client, guildId, queueConfig, queue);
+        // Update queue display with the updated queue
+        await updateQueueDisplay(client, guildId, queueConfig, newQueue);
+      }
     } catch (error) {
       console.error('Error in queue polling:', error);
     }
@@ -111,25 +111,55 @@ async function createAutoMatch(guild, team1, team2, queueConfig, client) {
     // Send match info to channel with voting buttons and vote data
     await sendMatchInfo(matchChannel, team1, team2, true, match, voteData);
 
-    // Notify captains via DM
+    // Notify captains via DM with match found message
     await notifyCaptains(client, team1, team2, matchChannel.id);
 
-    // Notify captains in queue channel (visible only to them)
-    if (queueChannel) {
-      await queueChannel.send({
-        content: `<@${team1.captainId}> <@${team2.captainId}>`,
-        embeds: [
+    // Send match found embed to captains via DM
+    try {
+      const team1Captain = await client.users.fetch(team1.captainId).catch(() => null);
+      const team2Captain = await client.users.fetch(team2.captainId).catch(() => null);
+
+      const matchFoundEmbed = {
+        title: '🎮 Match Found!',
+        description: `**${team1.teamName}** (${team1.mmr} MMR) vs **${team2.teamName}** (${team2.mmr} MMR)`,
+        color: 0x00ff00,
+        fields: [
           {
-            title: '✅ Match Found!',
-            description: `**${team1.teamName}** (${team1.mmr} MMR) vs **${team2.teamName}** (${team2.mmr} MMR)`,
-            color: 0x00ff00,
-            footer: {
-              text: 'This message is visible only to you'
-            },
-            timestamp: new Date(),
+            name: '📍 Match Channel',
+            value: `<#${matchChannel.id}>`,
+            inline: false,
           },
         ],
-      }).catch(() => {});
+        footer: {
+          text: '🔑 Solo tu puoi vederlo'
+        },
+        timestamp: new Date(),
+      };
+
+        const { EmbedBuilder } = require('discord.js');
+        const queueChannel = guild.channels.cache.get(queueConfig.queueChannelId);
+        const embed = new EmbedBuilder()
+          .setColor('#43b581')
+          .setTitle('✅ Match Found!')
+          .setDescription(`**${team1.teamName}** (${team1.mmr} MMR) vs **${team2.teamName}** (${team2.mmr} MMR)\n\nYou have been matched for a ranked game.\nCheck your match channel for instructions.`)
+          .addFields({ name: '📍 Match Channel', value: `<#${matchChannel.id}>`, inline: false })
+          .setFooter({ text: 'Solo tu puoi vederlo' })
+          .setTimestamp(new Date());
+
+        if (queueChannel && team1Captain) {
+          await queueChannel.send({
+            content: `<@${team1Captain.id}>`,
+            embeds: [embed],
+          });
+        }
+        if (queueChannel && team2Captain) {
+          await queueChannel.send({
+            content: `<@${team2Captain.id}>`,
+            embeds: [embed],
+          });
+        }
+    } catch (error) {
+      console.error('Error sending match found DM to captains:', error);
     }
   } catch (error) {
     console.error('Error creating auto match:', error);
