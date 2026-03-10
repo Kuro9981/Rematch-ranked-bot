@@ -229,6 +229,25 @@ module.exports = {
           await saveQueueConfig(guildId, queueConfig);
           await saveAutoQueue(guildId, []); // Clear queue
 
+          // Close all active matches without MMR changes
+          try {
+            const matches = await loadMatches();
+            const activeMatches = matches.filter((m) => m.status === 'active');
+            
+            for (const match of activeMatches) {
+              match.status = 'cancelled';
+              match.cancelledAt = new Date().toISOString();
+              match.cancelledReason = 'Queue closed by administrator';
+            }
+            
+            if (activeMatches.length > 0) {
+              await saveMatches(matches);
+              console.log(`[QUEUE_CLOSE] Cancelled ${activeMatches.length} active match(es)`);
+            }
+          } catch (error) {
+            console.error('Error closing active matches:', error);
+          }
+
           // Update the queue message to show it's closed
           try {
             const channel = interaction.guild.channels.cache.get(queueConfig.queueChannelId);

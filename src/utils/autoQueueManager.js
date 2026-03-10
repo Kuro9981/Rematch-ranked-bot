@@ -114,17 +114,23 @@ async function createAutoMatch(guild, team1, team2, queueConfig, client) {
     // Notify captains via DM
     await notifyCaptains(client, team1, team2, matchChannel.id);
 
-    // Notify captains in match channel (visible only to them)
-    await matchChannel.send({
-      embeds: [
-        {
-          title: '✅ Match Found!',
-          description: `**${team1.teamName}** (${team1.mmr} MMR) vs **${team2.teamName}** (${team2.mmr} MMR)`,
-          color: 0x00ff00,
-          timestamp: new Date(),
-        },
-      ],
-    }).catch(() => {});
+    // Notify captains in queue channel (visible only to them)
+    if (queueChannel) {
+      await queueChannel.send({
+        content: `<@${team1.captainId}> <@${team2.captainId}>`,
+        embeds: [
+          {
+            title: '✅ Match Found!',
+            description: `**${team1.teamName}** (${team1.mmr} MMR) vs **${team2.teamName}** (${team2.mmr} MMR)`,
+            color: 0x00ff00,
+            footer: {
+              text: 'This message is visible only to you'
+            },
+            timestamp: new Date(),
+          },
+        ],
+      }).catch(() => {});
+    }
   } catch (error) {
     console.error('Error creating auto match:', error);
   }
